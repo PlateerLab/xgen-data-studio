@@ -1,0 +1,66 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "xgen-data-studio"
+version = "0.1.0"
+description = "One domain ontology definition, executed on whatever database, graph store or reasoner a deployment has: a query IR compiled to SQL, Cypher, GQL, SPARQL and SQL/PGQ, with decisions, actions, roles, an asset graph and conformance tests."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "jinsoo96", email = "wlstn010203@gmail.com" }]
+keywords = [
+    "ontology", "knowledge-graph", "semantic-layer", "sparql", "cypher", "gql", "sql-pgq", "r2rml",
+    "shacl", "owl", "decision-table", "mcp",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Intended Audience :: Developers",
+    "Topic :: Database",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "License :: Other/Proprietary License",
+]
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/PlateerLab/xgen-data-studio"
+Changelog = "https://github.com/PlateerLab/xgen-data-studio/blob/main/CHANGELOG.md"
+
+[project.optional-dependencies]
+# Ontology and studio files in YAML (JSON needs nothing).
+yaml = ["pyyaml>=6"]
+# The in-process RDF backend, SPARQL reading, OWL import.
+rdf = ["rdflib>=7"]
+# SQL dialects beyond PostgreSQL and SQLite (MySQL, Oracle, SQL Server, Snowflake, BigQuery, ...).
+sql = ["sqlglot>=25"]
+# SHACL validation of a projection against the generated shapes.
+shacl = ["pyshacl>=0.26", "rdflib>=7"]
+# OWL 2 RL materialization.
+owl = ["owlrl>=7", "rdflib>=7"]
+# Decision tables on the GoRules ZEN engine.
+zen = ["zen-engine>=2"]
+postgres = ["psycopg[binary]>=3"]
+neo4j = ["neo4j>=5"]
+mcp = ["mcp>=1.2"]
+all = ["pyyaml>=6", "rdflib>=7", "sqlglot>=25", "pyshacl>=0.26", "owlrl>=7", "zen-engine>=2", "mcp>=1.2"]
+dev = ["pytest>=7", "ruff>=0.4"]
+
+[project.scripts]
+xds = "xgen_data_studio.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/xgen_data_studio"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

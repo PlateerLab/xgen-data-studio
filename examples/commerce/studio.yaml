@@ -1,0 +1,6 @@
+ontology: ontology.yaml
+now: "2026-10-30T12:00:00"
+backends:
+  source: {kind: sqlite, path: ":memory:", seed: seed.sql, source: true}
+  graph: {kind: rdflib}
+project: [graph]
