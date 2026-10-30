@@ -1,11 +1,14 @@
 """One query, every backend language; then the same answer from SQL and SPARQL, a decision with evidence."""
+import sys
 from datetime import datetime
 from pathlib import Path
 
-from xgen_data_studio import Ontology
-from xgen_data_studio.backends.rdf import RdflibBackend
-from xgen_data_studio.backends.sql import SqliteBackend
-from xgen_data_studio.studio import Studio
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+
+from xgen_data_studio import Ontology  # noqa: E402
+from xgen_data_studio.backends.rdf import RdflibBackend  # noqa: E402
+from xgen_data_studio.backends.sql import SqliteBackend  # noqa: E402
+from xgen_data_studio.studio import Studio  # noqa: E402
 
 HERE = Path(__file__).parent
 

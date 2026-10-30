@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>xgen-data-studio architecture</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+:root { --navy:#13213c; --blue:#1a73e8; --blue-soft:#e8f0fd; --blue-line:#c7dafb; --ink:#1b2330; --muted:#5f6b7a;
+  --line:#dfe5ec; --panel:#f5f7fa; }
+* { box-sizing:border-box; }
+body { margin:0; background:#fff; font-family:"Pretendard",-apple-system,"Segoe UI",sans-serif; color:var(--ink);
+  -webkit-font-smoothing:antialiased; }
+#figure { width:1520px; padding:34px 36px 30px; margin:0 auto; background:#fff; }
+h1 { margin:0; font-size:30px; font-weight:800; letter-spacing:-.4px; color:#0f1a2e; }
+h1 span { color:var(--blue); }
+.lead { margin:6px 0 22px; color:var(--muted); font-size:15px; }
+.row { display:grid; grid-template-columns:340px 34px 1fr 34px 330px; align-items:stretch; }
+.zone { border-radius:16px; padding:18px; display:flex; flex-direction:column; gap:10px; }
+.za { background:var(--panel); border:1px solid var(--line); }
+.zb { background:#eef4fe; border:1px solid #d5e3fa; }
+.zc { background:#fbf6ee; border:1px solid #efe3cf; }
+.zt { font-size:13px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:#59667a; }
+.zs { font-size:13px; color:var(--muted); margin-top:-6px; }
+.card { background:#fff; border:1px solid var(--line); border-radius:11px; padding:10px 13px; }
+.card b { display:block; font-size:14.5px; font-weight:800; }
+.card span { display:block; font-size:12.5px; color:var(--muted); margin-top:2px; line-height:1.45; }
+.card.hl { border:1.6px solid var(--blue); box-shadow:0 2px 10px rgba(26,115,232,.12); }
+.card.dark { background:var(--navy); border-color:var(--navy); }
+.card.dark b { color:#fff; } .card.dark span { color:#b9c6dc; }
+.chips { display:flex; flex-wrap:wrap; gap:5px; margin-top:6px; }
+.chip { font-size:11.5px; font-weight:700; padding:3px 8px; border-radius:999px; background:var(--blue-soft);
+  border:1px solid var(--blue-line); color:#15509f; }
+.chip.g { background:#fff; border-color:var(--line); color:#3a4656; }
+.arrow { display:grid; place-items:center; color:var(--blue); font-size:26px; font-weight:800; }
+.three { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+.five { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; }
+.four { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+.down { text-align:center; color:var(--blue); font-weight:800; font-size:18px; line-height:1; margin:-2px 0; }
+.band { margin-top:14px; border-radius:14px; background:var(--navy); color:#fff; padding:14px 20px;
+  display:flex; align-items:center; gap:16px; font-size:15px; }
+.band b { font-size:16px; }
+.band .chip { background:rgba(255,255,255,.1); border-color:rgba(255,255,255,.25); color:#fff; }
+.band .grow { flex:1; }
+.mini { font-size:12px; color:var(--muted); text-align:center; }
+</style>
+</head>
+<body>
+<div id="figure">
+  <h1>One ontology definition, <span>every backend</span></h1>
+  <p class="lead">Define the domain once and bind it to the source tables. Every question becomes one ontology query, compiled for the store a deployment already has.</p>
+  <div class="row">
+    <div class="zone za">
+      <div class="zt">Definition</div><div class="zs">one artifact · validated · versioned</div>
+      <div class="card"><b>Object types &amp; properties</b><span>keys, types, enums, the source column each one reads</span></div>
+      <div class="card"><b>Links</b><span>cardinality, inverse, transitive · bound by a join or a link table</span></div>
+      <div class="card"><b>States &amp; decision tables</b><span>allowed transitions · rules with evidence</span></div>
+      <div class="card"><b>Actions &amp; roles</b><span>checked requests · row filters per role</span></div>
+      <div class="card"><b>Registered queries &amp; questions</b><span>named IR with parameters · expected answers</span></div>
+      <div class="card"><b>Exchange</b><span>import OWL / RDFS · export with a loss report</span>
+        <div class="chips"><span class="chip">OWL</span><span class="chip">SHACL</span><span class="chip">R2RML</span><span class="chip">GoRules JDM</span><span class="chip">PROPERTY GRAPH DDL</span></div></div>
+    </div>
+    <div class="arrow">→</div>
+    <div class="zone zb">
+      <div class="zt">Execution adapters</div><div class="zs">the layer this package is</div>
+      <div class="three">
+        <div class="card"><b>A question</b><span>LLM writes IR only · checked against the ontology, repaired on failure</span></div>
+        <div class="card"><b>SPARQL text</b><span>read back into the IR, run anywhere</span></div>
+        <div class="card"><b>Cypher text</b><span>read back into the IR, run anywhere</span></div>
+      </div>
+      <div class="down">↓</div>
+      <div class="card hl"><b>Ontology query IR</b><span>typed graph pattern · filters · exists · hops · aggregates · order · parameters — every literal is bound, never spliced</span></div>
+      <div class="down">↓</div>
+      <div class="five">
+        <div class="card dark"><b>SQL</b><span>joins · recursive CTE · dialects via sqlglot</span></div>
+        <div class="card"><b>Cypher 25</b><span>Neo4j · openCypher</span></div>
+        <div class="card"><b>GQL</b><span>ISO/IEC 39075</span></div>
+        <div class="card"><b>SPARQL 1.1</b><span>same IRIs as R2RML</span></div>
+        <div class="card"><b>SQL/PGQ</b><span>GRAPH_TABLE</span></div>
+      </div>
+      <div class="four">
+        <div class="card"><b>Store port</b><span>projection · change sets</span></div>
+        <div class="card"><b>Reason &amp; validate</b><span>rules · SHACL · OWL RL</span></div>
+        <div class="card"><b>Decide</b><span>decision tables · ZEN</span></div>
+        <div class="card"><b>Act</b><span>approval · write-back · audit</span></div>
+      </div>
+      <div class="mini">capabilities declared per backend · conformance: the same query gives the same rows everywhere</div>
+    </div>
+    <div class="arrow">→</div>
+    <div class="zone zc">
+      <div class="zt">Backends you have</div><div class="zs">values stay in the source</div>
+      <div class="card"><b>Relational</b><div class="chips"><span class="chip g">PostgreSQL</span><span class="chip g">SQLite</span><span class="chip g">MySQL</span><span class="chip g">Oracle</span><span class="chip g">SQL Server</span><span class="chip g">Snowflake</span></div></div>
+      <div class="card"><b>RDF triple stores</b><div class="chips"><span class="chip g">Fuseki</span><span class="chip g">GraphDB</span><span class="chip g">Stardog</span><span class="chip g">Virtuoso</span><span class="chip g">Oxigraph</span></div></div>
+      <div class="card"><b>Property graphs</b><div class="chips"><span class="chip g">Neo4j</span><span class="chip g">Memgraph</span><span class="chip g">Neptune</span><span class="chip g">Apache AGE</span></div></div>
+      <div class="card"><b>ISO graph engines</b><div class="chips"><span class="chip g">Spanner Graph</span><span class="chip g">BigQuery Graph</span><span class="chip g">Oracle 26ai</span></div></div>
+      <div class="card"><b>Reasoners &amp; engines</b><div class="chips"><span class="chip g">owlrl</span><span class="chip g">pySHACL</span><span class="chip g">ZEN</span></div></div>
+    </div>
+  </div>
+  <div class="band"><b>Agents over MCP</b><span class="grow">describe · translate · query · decide · request an action — scoped to the agent's role; a person approves before anything is written</span>
+    <span class="chip">stdio</span><span class="chip">streamable HTTP</span></div>
+</div>
+</body>
+</html>

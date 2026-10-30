@@ -17,3 +17,5 @@
 - Asset catalog: what an agent sees, what a change touches, what nobody uses.
 - LLM assist: schema card, IR generation with check-and-repair.
 - Conformance runs across backends, `xds` CLI and an MCP server.
+- `xds preview`: a studio page (ontology, one query on every backend, a decision, the data map) built from
+  live results; `tools/render_screens.py` captures it for the README.

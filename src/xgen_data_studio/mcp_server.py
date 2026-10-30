@@ -1,4 +1,4 @@
-"""MCP server: the studio's tools for agents (Dex, XGEN agents, any MCP client), over stdio or HTTP."""
+"""MCP server: the studio's tools for agents in any MCP client, over stdio or HTTP."""
 from __future__ import annotations
 
 import contextlib

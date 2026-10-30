@@ -99,6 +99,14 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--agent", action="append", default=[], help="name=role1,role2")
     s.add_argument("--sees")
 
+    s = sub.add_parser("preview", help="write a studio page built from live results")
+    s.add_argument("config")
+    s.add_argument("-o", "--output", default="studio.html")
+    s.add_argument("--query", default="")
+    s.add_argument("--decision", default="")
+    s.add_argument("--key", default="")
+    s.add_argument("--target", default="cypher")
+
     s = sub.add_parser("mcp", help="serve the studio to agents over MCP")
     s.add_argument("config")
     s.add_argument("--role")
@@ -226,6 +234,12 @@ def main(argv: list[str] | None = None) -> int:
         rep = validate(studio.onto, studio.projection or project(studio.onto, studio.backend()))
         _out(rep.to_dict())
         return 0 if rep.conforms else 1
+    elif a.cmd == "preview":
+        from xgen_data_studio.preview import render
+
+        html = render(studio, query=a.query, decision=a.decision, key=a.key, target=a.target)
+        Path(a.output).write_text(html, encoding="utf-8")
+        _out({"written": a.output})
     elif a.cmd == "catalog":
         from xgen_data_studio.catalog import from_ontology
 

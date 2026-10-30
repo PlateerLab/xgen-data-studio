@@ -1,31 +1,10 @@
 # xgen-data-studio
 
-**도메인 온톨로지는 한 벌로 정의하고, 실행은 고객사가 쓰는 어느 저장소 · 추론기에서나.**
-XGEN 데이터 스튜디오의 실행 어댑터입니다. 객체 · 속성 · 관계 · 상태 · 결정 · 액션 · 권한을 한 번 정의하고 원천 테이블에 바인딩하면,
-같은 질의가 SQL · Cypher · GQL · SPARQL · SQL/PGQ 로 바뀌어 각 백엔드에서 실행됩니다. 들어오는 SPARQL · Cypher 도 받아 다른 백엔드에서 돌립니다.
-
-```
- 정의 정본 (YAML/JSON → PostgreSQL)        실행 어댑터 (이 패키지)                              고객사 백엔드
-┌────────────────────────────┐   ┌───────────────────────────────────────────────┐   ┌─────────────────────────┐
-│ 객체 · 속성 · 관계 · 인터페이스│   │ LLM 보조: 자연어 → 질의 IR (검사 → 고쳐 다시)    │   │ 관계형 DB (원천)          │
-│ 상태 전이 · 결정표 · 액션    │──▶│ 온톨로지 질의 IR ← 들어오는 SPARQL · Cypher      │──▶│ RDF 트리플스토어          │
-│ 역할(행 필터) · 검증 질문    │   │ 컴파일러: SQL(+방언) │ Cypher │ GQL │ SPARQL │ PGQ │   │ 속성 그래프              │
-│ 바인딩: 테이블 · 키 · 컬럼   │   │ 포트: 저장소(투영·변경분) │ 추론·검증 │ 판정      │   │ GQL · SQL/PGQ 엔진       │
-│ 내보내기 OWL·SHACL·R2RML    │   │ 적합성 시험: 같은 질의, 백엔드마다 같은 결과      │   │ 추론기 · 결정 엔진        │
-└────────────────────────────┘   └───────────────────────────────────────────────┘   └─────────────────────────┘
-                                   에이전트 면(MCP): 스키마 설명 · 질의 · 결정 · 선언된 액션 요청(사람이 승인)
-```
-
-## 설치
-
-```bash
-pip install "xgen-data-studio[all]"        # rdflib · sqlglot · pySHACL · owlrl · ZEN · MCP · YAML
-pip install xgen-data-studio               # 핵심만: 외부 의존성 없음 (SQLite · JSON · 결정표 · 규칙)
-```
-
-선택 묶음: `yaml` `rdf` `sql` `shacl` `owl` `zen` `postgres` `neo4j` `mcp`.
-
-## 빠른 시작
+**One domain ontology, executed wherever the data already lives.** Describe the business once — object
+types, properties, links, states, decisions, actions, roles — and bind it to the source tables. A question
+then becomes *one* ontology query, and the studio compiles it for the store a deployment actually has:
+SQL in any dialect, Cypher, ISO GQL, SPARQL or SQL/PGQ. SPARQL and Cypher written by people or agents are read
+back into the same query, so they run on any of those stores too. **Zero hard dependencies, zero infra to try it.**
 
 ```python
 from xgen_data_studio import Ontology
@@ -33,132 +12,281 @@ from xgen_data_studio.studio import Studio
 from xgen_data_studio.backends.sql import SqliteBackend
 from xgen_data_studio.backends.rdf import RdflibBackend
 
-onto = Ontology.load("examples/commerce/ontology.yaml").check()
-studio = Studio(onto)
-studio.add_backend("source", SqliteBackend("commerce.db"))     # 원천: 값은 여기서 읽습니다
-studio.add_backend("graph", RdflibBackend())                   # 그래프: 필요할 때만 투영합니다
-studio.project()                                               # 다음 호출부터는 변경분만 반영
+studio = Studio(Ontology.load("examples/commerce/ontology.yaml").check())
+studio.add_backend("source", SqliteBackend()).script(open("examples/commerce/seed.sql", encoding="utf-8").read())
+studio.add_backend("graph", RdflibBackend())        # a graph only when you want one
+studio.project()                                   # source rows -> RDF; later calls send only what changed
 
-studio.run("lowStock", {"threshold": 5})                       # 등록 질의 → SQL
-studio.run("lowStock", {"threshold": 5}, backend="graph")      # 같은 질의 → SPARQL
-studio.translate("lowStock", "sql:oracle").text                # 방언만 보기
-studio.run_cypher("MATCH (o:Order)-[:hasItem]->(i:OrderItem) RETURN o.order_id, count(i) AS n")
-studio.decide("returnEligibility", "I1001").outputs            # {'eligible': True, 'reason': ...} + 근거
-studio.conformance().summary()                                 # 백엔드끼리 결과 대조
-studio.questions().accuracy                                    # 검증 질문 정답률
+studio.run("revenueByCategory")                    # compiled to SQL, run on the source
+studio.run("revenueByCategory", backend="graph")   # the same query as SPARQL, the same rows
+studio.translate("revenueByCategory", "sql:oracle").text      # or cypher, gql, sparql, sqlpgq, sql:mysql, ...
+studio.run_cypher("MATCH (o:Order)-[:hasItem]->(i:OrderItem) RETURN o.order_id, count(i) AS n")  # on SQL
+studio.decide("returnEligibility", "I1001")        # outputs, the rule that fired, the columns it read
 ```
 
-명령줄은 `xds` 입니다.
+<p align="center">
+  <img src="assets/architecture.png" alt="One ontology definition feeding execution adapters that compile one query IR to SQL, Cypher, GQL, SPARQL and SQL/PGQ for the backends a deployment has" width="920">
+</p>
 
-```bash
-xds validate examples/commerce/ontology.yaml
-xds translate examples/commerce/ontology.yaml lowStock --to sql:mysql --param threshold=5
-xds translate examples/commerce/ontology.yaml "MATCH (o:Order) RETURN o.status, count(o) AS n" --from cypher --to sparql
-xds export examples/commerce/ontology.yaml --format owl      # shacl · r2rml · pgq · jdm · json · yaml · report
-xds questions examples/commerce/studio.yaml
-xds conformance examples/commerce/studio.yaml
-xds mcp examples/commerce/studio.yaml --role customer_agent --principal customer_id=C001
+## What it looks like
+
+The screens below are the studio page that `xds preview` writes for the example in `examples/commerce`.
+Nothing on them is drawn by hand: the compiled queries, the rows from both backends, the decision with its
+evidence and the reach of a column change are what the library computed for that example.
+
+<table>
+  <tr>
+    <td width="50%"><img src="assets/screens/ontology.png" alt="Ontology screen: schema graph of the bound object types and the selected type's properties with their source columns"></td>
+    <td width="50%"><img src="assets/screens/query.png" alt="Query screen: one ontology query, its text in seven backend languages, and identical rows from the SQL source and the SPARQL graph"></td>
+  </tr>
+  <tr>
+    <td><b>Ontology.</b> Object types and links bound to tables, each property with the column it reads, the state machine, the links in and out.</td>
+    <td><b>One query, every language.</b> The ontology query, its text for PostgreSQL, MySQL, Oracle, Cypher 25, GQL, SPARQL and SQL/PGQ, and the rows from each backend side by side.</td>
+  </tr>
+  <tr>
+    <td><img src="assets/screens/decision.png" alt="Decision screen: the decision table with the rule that fired, the evidence path to source columns, and an action request waiting for a person's approval"></td>
+    <td><img src="assets/screens/map.png" alt="Data map screen: everything that depends on one column, what an agent can reach, and the data nobody uses"></td>
+  </tr>
+  <tr>
+    <td><b>Decide and act.</b> A decision table, the rule that fired and the source column behind every input; an agent's action request with its checks, waiting for a person.</td>
+    <td><b>The data map.</b> What a column change touches, from property to agent; what one agent can reach; what nobody uses.</td>
+  </tr>
+</table>
+
+## The pieces
+
+| Module | What it does |
+|---|---|
+| `model` · `validate` | The definition: object types (key, table, properties with type, enum values and column), links (`on` a join or `via` a link table; cardinality, inverse, transitive, symmetric, required), interfaces, state machines, decision tables, actions, roles with row filters, registered queries and validation questions. JSON or YAML, checked for consistency before anything runs |
+| `ir` · `check` | The ontology query: a typed graph pattern with filters, `exists`, multi-hop links, aggregates, order and parameters. The check resolves link direction (inverse names included), types every literal and parameter, and explains what is wrong in plain sentences |
+| `compile` | One compiler per language: SQL (PostgreSQL and SQLite natively, every other dialect through sqlglot), Cypher 25, ISO GQL, SPARQL 1.1, SQL/PGQ, and the `CREATE PROPERTY GRAPH` for the bound tables. Literals are always bound as parameters; NULLs sort last everywhere |
+| `parse` | SPARQL and Cypher read back into the IR, so a query in either runs on any backend |
+| `backends` | SQLite, any DB-API connection, rdflib, any SPARQL 1.1 endpoint, Neo4j, and a callable adapter for engines without a driver here. Each declares what it can do |
+| `projection` | Source rows to RDF triples or property-graph nodes and edges, and the change set between two projections for incremental loads |
+| `decide` · `actions` · `roles` | Decision tables with evidence, exported to GoRules JDM and run on ZEN; actions with checks, human approval, write-back and an audit trail; role scoping of every query and tool |
+| `reason` | Inverse, symmetric and transitive links derived with their reasons; shape checks; SHACL generated and validated; OWL 2 RL materialization |
+| `exchange` | OWL and R2RML export with a report of what each format cannot hold; OWL/RDFS import as a starting definition |
+| `catalog` | The data space as a graph: databases, tables, columns, files, collections, ontology objects, queries, decisions, actions, roles, agents |
+| `nl` | A schema card and IR guide for a language model, and a loop that checks its answer and asks again with the issues |
+| `conformance` · `studio` · `cli` · `mcp_server` · `preview` | Runs across backends compared row for row; the facade; the `xds` command; the MCP server; the studio page |
+
+## Define once
+
+```yaml
+objects:
+  OrderItem:
+    label: 주문상품
+    source: {table: order_items}
+    key: item_id
+    properties:
+      delivered_at: {type: datetime, label: 배송 완료 일시}
+      item_status:  {type: enum, values: [NORMAL, RETURN_REQUESTED, RETURNED]}
+    states: {property: item_status, initial: NORMAL, transitions: [{from: NORMAL, to: RETURN_REQUESTED}]}
+links:
+  hasItem: {from: Order, to: OrderItem, cardinality: one_to_many, on: {order_id: order_id}, inverse: itemOf}
+decisions:
+  returnEligibility:
+    target: OrderItem
+    inputs:
+      days_since_delivery: {type: integer, days_since: delivered_at}
+      category_returnable: {type: boolean, path: [ofSku, skuOf, inCategory], property: returnable}
+    outputs: {eligible: boolean, reason: string}
+    rules:
+      - {when: {days_since_delivery: "null"}, then: {eligible: false, reason: 배송 완료 전입니다}}
+      - {when: {category_returnable: "false"}, then: {eligible: false, reason: 반품할 수 없는 카테고리입니다}}
+      - {when: {days_since_delivery: "<= 7"}, then: {eligible: true, reason: 반품기간 7일 이내입니다}}
+roles:
+  customer_agent:
+    read: [Order, OrderItem]
+    row_filters:
+      Order: {eq: [$self.customer_id, {principal: customer_id}]}
 ```
 
-## 정의 형식
+The full example is [`examples/commerce/ontology.yaml`](examples/commerce/ontology.yaml): seven object types,
+eight links, a decision, an action, two roles, nine registered queries and seven validation questions.
+Decision cells are a small FEEL subset: `-`, `null`, `not null`, `<= 7`, `[1..7]`, `"VIP"`, `!= "NORMAL"`,
+`in ["A", "B"]`, `true`.
 
-예시 전체는 [`examples/commerce/ontology.yaml`](examples/commerce/ontology.yaml) 입니다.
-
-| 항목 | 쓰는 법 | 쓰임 |
-|---|---|---|
-| `objects` | `key`, `source.table`, `properties`(type · label · column · values · required), `parent`, `implements`, `states` | 객체와 원천 테이블 바인딩. 속성 이름은 IRI 하나로 쓰이므로 타입이 같아야 합니다 |
-| `links` | `from` · `to` · `cardinality`, `on: {원천속성: 대상속성}` 또는 `via: {table, source, target}`, `inverse`, `transitive`, `symmetric`, `required` | 관계와 조인 바인딩 |
-| `interfaces` | 공통 속성 목록 | 여러 객체가 같은 모양을 가짐 |
-| `decisions` | `target`, `inputs`(`property` · `path`+`property` · `days_since` · `count` · `param`), `outputs`, `rules`(`when` 셀 · `then`), `hit_policy` | 업무 판정. 결과와 함께 어느 테이블 · 컬럼 값으로 판정했는지 근거를 돌려줍니다 |
-| `actions` | `target`, `parameters`, `criteria`(결정 기대값 · 상태), `set`, `transition_to`, `approval` | 요청 → 검사 → 사람 승인 → 원천 반영 → 감사 기록 |
-| `roles` | `read`, `row_filters`(`$self` · `{principal: 속성}`), `run`, `request`, `execute` | 에이전트가 볼 수 있는 행과 할 수 있는 일 |
-| `queries` | 이름 붙은 질의 IR + `params` + `example` | 등록 질의. LLM 은 이름과 파라미터만 고르면 됩니다 |
-| `questions` | 질의 또는 결정 + 기대값(`rows` · `column/values` · `first` · 결정 출력) | 검증 질문과 정답률 |
-
-결정표 셀: `-`(아무거나) · `null` · `not null` · `<= 7` · `[1..7]` · `"VIP"` · `!= "NORMAL"` · `in ["A", "B"]` · `true`.
-
-## 질의 IR
+## Ask once
 
 ```json
 {"match": {"o": "Order", "i": "OrderItem"},
- "edges": [["o", "hasItem", "i"], {"from": "k", "link": "broader", "to": "a", "hops": [1, 3]}],
- "where": {"and": [{"ne": ["o.status", "CANCELLED"]},
+ "edges": [["o", "hasItem", "i"]],
+ "where": {"and": [{"eq": ["o.status", "DELIVERED"]},
                    {"not_exists": {"match": {"c": "Claim"}, "edges": [["i", "hasClaim", "c"]]}}]},
- "return": [{"col": "o.order_id", "as": "order"}, {"sum": "i.unit_price", "as": "total"}],
- "order": ["-total"], "limit": 10}
+ "return": ["i.item_id", {"col": "o.order_id", "as": "order"}],
+ "order": ["item_id"]}
 ```
 
-비교 `eq ne lt lte gt gte` · `in` `not_in` · `contains` · `is_null` `not_null` · `and or not` · `exists` `not_exists`.
-집계 `count count_distinct sum avg min max`. 역관계 이름(`itemOf`)으로 써도 방향을 알아서 맞춥니다. 값은 모두 파라미터로 넘기며 쿼리문에 끼워 넣지 않습니다.
-정렬은 모든 백엔드에서 NULL 이 뒤로 갑니다.
+Comparisons `eq ne lt lte gt gte`, `in` / `not_in`, `contains`, `is_null` / `not_null`, `and` / `or` / `not`,
+`exists` / `not_exists`; aggregates `count count_distinct sum avg min max`; `{"from": "k", "link": "broader",
+"to": "a", "hops": [1, 3]}` for a link from a type to itself; `{"optional": true}` for a left join. A link can be
+written in either direction, by its name or its inverse. Named queries live in the definition with their
+parameters, so a model or a person can pick one by name.
 
-## 백엔드
+## Run anywhere
 
-| 언어 | 백엔드 (예) | optional | exists | 다단계 홉 | contains | 비고 |
+| Language | Backends (examples) | optional | exists | hops | contains | Adapter |
 |---|---|---|---|---|---|---|
-| SQL | PostgreSQL · SQLite 직접, 그 밖은 sqlglot(MySQL · Oracle · SQL Server · Snowflake · BigQuery …) | LEFT JOIN | EXISTS | 재귀 CTE | strpos · instr | `SqliteBackend`, `DbApiBackend`(qmark · format · numeric) |
-| Cypher 25 | Neo4j · Memgraph · Neptune openCypher · Apache AGE | OPTIONAL MATCH | EXISTS {} | `*1..3` + WITH DISTINCT | CONTAINS | `Neo4jBackend`, 투영은 UNWIND · MERGE |
-| GQL | Spanner Graph · BigQuery Graph · Fabric Graph | OPTIONAL MATCH | EXISTS {} | `{1,3}` + ANY | 없음(오류로 알림) | `CallableBackend` 로 드라이버를 감쌉니다 |
-| SPARQL 1.1 | rdflib · Fuseki · GraphDB · Stardog · Virtuoso · Oxigraph | OPTIONAL | FILTER EXISTS | 경로 대안 + DISTINCT | CONTAINS | `RdflibBackend`, `SparqlEndpointBackend`(GSP · Update) |
-| SQL/PGQ | Oracle 26ai · Spanner | 없음 | 없음 | `{1,3}` | POSITION | `graph_ddl()` 이 CREATE PROPERTY GRAPH 를 만듭니다 |
+| SQL | PostgreSQL and SQLite natively; MySQL, Oracle, SQL Server, Snowflake, BigQuery, … through sqlglot | LEFT JOIN | EXISTS | recursive CTE | strpos · instr | `SqliteBackend`, `DbApiBackend` (qmark · format · numeric) |
+| Cypher 25 | Neo4j, Memgraph, Neptune openCypher, Apache AGE | OPTIONAL MATCH | `EXISTS {}` | `*1..3` + WITH DISTINCT | CONTAINS | `Neo4jBackend`, loads by UNWIND · MERGE |
+| GQL | Spanner Graph, BigQuery Graph, Fabric Graph | OPTIONAL MATCH | `EXISTS {}` | `{1,3}` + ANY | — (refused) | `CallableBackend` around your driver |
+| SPARQL 1.1 | rdflib, Fuseki, GraphDB, Stardog, Virtuoso, Oxigraph | OPTIONAL | FILTER EXISTS | path alternatives + DISTINCT | CONTAINS | `RdflibBackend`, `SparqlEndpointBackend` (Graph Store Protocol · Update) |
+| SQL/PGQ | Oracle 26ai, Spanner | — (refused) | — (refused) | `{1,3}` | POSITION | `graph_ddl()` writes the property graph over the tables |
 
-할 수 있는 일은 `Capabilities` 로 선언하고, 쓰지 못하는 기능을 쓰는 질의는 실행 전에 알립니다.
-그래프 백엔드는 원천을 읽어 투영(`project`)하고, 다음부터는 이전 투영과의 변경분(SPARQL `DELETE/INSERT DATA`, Cypher `MERGE/DELETE`)만 보냅니다.
+A backend declares its `Capabilities`; a query that needs something a backend lacks is refused before it runs,
+with the reason. Values stay in the source: a graph backend gets a projection only when you ask for one, and
+after that only the change set (`DELETE DATA` / `INSERT DATA`, or `MERGE` / `DELETE`).
 
-## 추론 · 검증 · 교환
+The same IRIs are used by the SPARQL compiler, the projection and the R2RML export, so an R2RML-aware engine
+(Ontop, Stardog, GraphDB) can answer the studio's SPARQL straight from the relational source.
 
-| 기능 | 함수 | 하는 일 |
+## Decide, act, and stay in scope
+
+```python
+r = studio.decide("returnEligibility", "I1001")
+r.outputs    # {'eligible': True, 'reason': '배송 완료 후 반품기간 7일 이내입니다'}
+r.matched    # ['in-window']
+r.evidence   # days_since_delivery = 4 <- order_items.delivered_at, category_returnable = True <- categories.returnable
+
+from xgen_data_studio.actions import Actor
+p = studio.actions.request("requestReturn", "I1001", {"reason": "size"}, actor=Actor("bot", "agent", ["customer_agent"]))
+p.status     # 'pending': role, parameters, state transition and decision all checked
+studio.actions.approve(p.id, approver=Actor("kim", "human", ["operator"]))   # only a person approves
+studio.actions.audit                                                       # requested, approved, executed
+
+studio.run("myOrders", role="customer_agent", principal={"customer_id": "C001"})   # only that customer's rows
+```
+
+Decision tables export to GoRules JDM (`decide.zen.to_jdm`) and run on the ZEN engine when `use_zen=True`;
+the tests check that ZEN and the built-in engine agree on every case.
+
+## Reason, validate, exchange
+
+| Need | Call | Result |
 |---|---|---|
-| 규칙 | `reason.rules.run_rules` | 역관계 · 대칭 · 전이(깊이 상한) 유도, 근거 경로 기록. 필수 관계 · 카디널리티 · 배타 · 필수 속성 · 열거값 · 상태 검사 |
-| SHACL | `reason.shacl.to_shacl` / `validate` | 정의에서 형상 생성, pySHACL 로 투영 검증 |
-| OWL RL | `reason.owl_rl.materialize` | owlrl 물질화. 규칙 엔진과 같은 사실을 내는지 시험합니다 |
-| OWL | `exchange.owl.to_owl` | 클래스 · 데이터/객체 속성 · 역관계 · 전이. 담지 못하는 것은 보존 / 조정 / 미지원 리포트 |
-| R2RML | `exchange.r2rml.to_r2rml` | 바인딩을 R2RML 로. Ontop · Stardog · GraphDB 가 원천 위에서 SPARQL 을 바로 답합니다 |
-| 가져오기 | `exchange.importer.from_owl` | FIBO · schema.org · GS1 같은 OWL/RDFS 를 정의 초안으로, 리포트와 함께 |
-| 결정 엔진 | `decide.zen.to_jdm` / `evaluate_zen` | 결정표를 GoRules JDM 으로 내보내 ZEN 에서 실행. 내장 엔진과 결과를 대조합니다 |
+| Derived links | `reason.rules.run_rules(onto, projection)` | inverse, symmetric and transitive (depth-capped) links, each with the facts it came from; findings for missing required links, cardinality, exclusive links, required properties, enum values, states |
+| Shape validation | `reason.shacl.to_shacl(onto)`, `validate(onto, projection)` | SHACL shapes from the definition, checked with pySHACL |
+| OWL reasoning | `reason.owl_rl.materialize(onto, projection)` | owlrl closure; tested to derive exactly what the built-in rules derive |
+| Standards out | `exchange.owl.to_owl(onto)`, `exchange.r2rml.to_r2rml(onto)` | OWL 2 and R2RML, with a report of what was preserved, adjusted or left out |
+| Standards in | `exchange.importer.from_owl(ttl)` | a starting definition from FIBO, schema.org, GS1 or any OWL/RDFS, with the same report |
 
-## 자산 온톨로지
+## The data map
 
-`catalog.from_ontology(onto)` 가 DB · 테이블 · 컬럼 · 객체 · 속성 · 관계 · 질의 · 결정 · 액션 · 역할을 그래프로 잇고,
-`add_folder` · `add_file` · `add_agent` 로 폴더 · 파일 · 컬렉션 · 에이전트를 더합니다.
+```python
+from xgen_data_studio.catalog import from_ontology
+cat = from_ontology(studio.onto)                  # tables, columns, objects, properties, queries, decisions, roles
+cat.add_file("policies/returns.pdf", folder="policies", collection="commerce-policies")
+cat.add_agent("support", roles=["customer_agent"], uses=["collection:commerce-policies"])
+cat.impact("column:order_items.delivered_at")     # the property, query, decision, action, role and agent it reaches
+cat.sees("support")                               # every table, column and file that agent can reach
+cat.unused()                                      # what no agent or workflow uses
+```
 
-- `sees("고객응대")`: 그 에이전트가 역할과 도구로 닿는 테이블 · 컬럼 · 파일
-- `impact("column:order_items.delivered_at")`: 그 컬럼이 바뀌면 영향을 받는 속성 · 질의 · 결정 · 액션 · 역할 · 에이전트
-- `unused()`: 어느 에이전트도 쓰지 않는 테이블 · 컬럼 · 파일
+## Questions in plain language
 
-## LLM 보조
+`nl.IRGenerator(onto, llm)` gives a model a schema card (only what the role may read) and the IR format, and
+takes back either an IR object or a registered query name with parameters. The answer is checked against the
+ontology; if it fails, the model is asked again with the list of issues. The model never writes backend
+query text. `llm` is any `(system, prompt) -> str`.
 
-`nl.IRGenerator(onto, llm)` 은 스키마 카드(역할이 읽을 수 있는 것만)와 IR 형식을 주고 질의 IR 이나 등록 질의 이름을 받습니다.
-IR 은 온톨로지로 검사하고, 걸리면 문제 목록을 붙여 다시 묻습니다. LLM 은 백엔드 쿼리문을 직접 쓰지 않습니다. `llm` 은 `(system, prompt) -> str` 인 함수면 무엇이든 됩니다.
-
-## MCP
+## Agents over MCP
 
 ```bash
-xds mcp studio.yaml --role customer_agent --principal customer_id=C001 [--read-only]
+xds mcp examples/commerce/studio.yaml --role customer_agent --principal customer_id=C001 [--read-only]
 ```
 
-도구: `describe_ontology` · `list_backends` · `translate_query` · `run_query` · `run_sparql` · `run_cypher` · `decide` · `request_action` · `list_proposals`.
-모든 호출은 역할의 행 필터 안에서 돕니다. 액션은 요청만 만들고, 원천에 쓰는 것은 사람이 `approve` 한 뒤입니다.
+Tools: `describe_ontology`, `list_backends`, `translate_query`, `run_query`, `run_sparql`, `run_cypher`,
+`decide`, `request_action`, `list_proposals`. Every call runs inside the role's row filters; `request_action`
+only files a request, and nothing is written until a person approves it. Works with the MCP Python SDK 1.x and 2.x.
 
-## 설정 파일
+## Install
+
+```bash
+pip install xgen-data-studio                 # core, zero deps: SQLite, JSON, the IR, every compiler, decisions, rules
+pip install "xgen-data-studio[all]"          # + PyYAML, rdflib, sqlglot, pySHACL, owlrl, ZEN, MCP
+pip install "xgen-data-studio[postgres]"     # + psycopg      ("[neo4j]" for the Neo4j driver)
+```
+
+Run the demo from a checkout with only PyYAML and rdflib installed:
+
+```bash
+python examples/commerce/demo.py
+```
+
+## Command line
+
+```bash
+xds validate examples/commerce/ontology.yaml
+xds translate examples/commerce/ontology.yaml lowStock --to sql:snowflake --param threshold=5
+xds translate examples/commerce/ontology.yaml "MATCH (o:Order) RETURN o.status, count(o) AS n" --from cypher --to sparql
+xds export examples/commerce/ontology.yaml --format owl         # shacl · r2rml · pgq · jdm · json · yaml · report
+xds import-owl vocabulary.ttl -o ontology.yaml
+xds run examples/commerce/studio.yaml myOrders --role customer_agent --principal customer_id=C001
+xds sparql examples/commerce/studio.yaml query.rq --backend source
+xds decide examples/commerce/studio.yaml returnEligibility I1001
+xds questions examples/commerce/studio.yaml                    # validation questions and accuracy
+xds conformance examples/commerce/studio.yaml                  # every registered query on every backend
+xds preview examples/commerce/studio.yaml -o studio.html       # the page in the screenshots
+```
+
+A studio file names the ontology, the backends and what to project at start:
 
 ```yaml
 ontology: ontology.yaml
 backends:
-  source: {kind: sqlite, path: commerce.db, source: true}       # postgres(dsn) · dbapi(module, connect)
-  graph:  {kind: rdflib}                                         # sparql(query_url, update_url, gsp_url)
-  neo:    {kind: neo4j, uri: "bolt://host:7687", password: "${NEO4J_PASSWORD}"}
+  source: {kind: sqlite, path: commerce.db, source: true}       # postgres (dsn) · dbapi (module, connect)
+  graph:  {kind: rdflib}                                         # sparql (query_url, update_url, gsp_url)
+  neo:    {kind: neo4j, uri: "bolt://localhost:7687", password: "${NEO4J_PASSWORD}"}
 project: [graph]
 ```
 
-## 개발
+## Design
 
-```bash
-pip install -e ".[all,dev]"
-ruff check src tests
-pytest -q
+- **One definition, many executions.** The definition is the only artifact people edit; SQL, Cypher, GQL,
+  SPARQL, SQL/PGQ, OWL, SHACL, R2RML and JDM are all generated from it.
+- **Values stay in the source.** Object types are bound to tables; a graph store is a projection you opt into,
+  kept current by change sets.
+- **A language model writes the IR, never the backend text.** Generated queries are checked against the
+  ontology before they run, and every literal is a bound parameter.
+- **Rules decide, reasoners derive.** Business decisions live in decision tables with their evidence;
+  OWL RL and SHACL derive and validate facts. A decision does not depend on which reasoner is installed.
+- **Prove it with the same rows.** Conformance runs compare every registered query across backends, and the
+  readers are tested by compiling each query to SPARQL and Cypher and reading it back.
+- **`dependencies = []`.** Everything optional is an extra; with all of them blocked the core test suite still passes.
+
+```
+src/xgen_data_studio/
+  model.py validate.py      # the definition and its checks
+  ir.py check.py values.py  # the query IR, its check, typed values
+  compile/                  # sql (+ dialects) · cypher (+ gql) · sparql · pgq
+  parse/                    # sparql · cypher -> IR
+  backends/                 # sql (sqlite, dbapi) · rdf (rdflib, endpoint) · graph (neo4j, callable)
+  projection.py rdf.py      # rows -> RDF / property graph, change sets; IRIs and Turtle
+  decide/ actions.py roles.py
+  reason/                   # rules · shacl · owl_rl
+  exchange/                 # owl · r2rml · importer
+  catalog.py nl.py conformance.py studio.py config.py tools.py mcp_server.py preview.py cli.py
+examples/commerce/          # ontology, seed data, studio file, demo
+tools/                      # render_screens.py (the README images), architecture.html
 ```
 
-## 라이선스
+## Roadmap
 
-소스공개형 독점 라이선스입니다. PlateerLab 조직원은 플래티어 제품 범위에서 쓸 수 있습니다. [LICENSE](LICENSE) 를 보세요.
+- conformance runs against live PostgreSQL, Neo4j and Fuseki in CI
+- Gremlin as a compile target once TinkerPop 4 is released
+- an editable definition store with change proposals and versions
+- the studio page as a served application rather than a static file
+
+## Repository model
+
+[`PlateerLab/xgen-data-studio`](https://github.com/PlateerLab/xgen-data-studio) is the source of truth.
+Members of the PlateerLab organization commit there directly; CI runs the full suite on Python 3.10–3.12 and the
+core suite with no optional dependencies.
+
+## License
+
+Source-available. Copyright (c) 2026 Jinsoo Kim.
+
+Members of the PlateerLab organization may use, modify and ship it as part of Plateer products (LICENSE §4).
+For anyone else, reading and citing are fine; any other use needs written permission. See [`LICENSE`](LICENSE).
