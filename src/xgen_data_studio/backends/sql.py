@@ -31,6 +31,13 @@ class SqliteBackend(Backend):
         self.conn.commit()
         return cur.rowcount
 
+    def fetch(self, sql: str, args: tuple = ()) -> list[tuple]:
+        return [tuple(r) for r in self.conn.execute(sql, args).fetchall()]
+
+    def columns(self, table: str) -> dict[str, str] | None:
+        rows = self.conn.execute(f'PRAGMA table_info("{table.replace(chr(34), chr(34) * 2)}")').fetchall()
+        return {r[1].lower(): (r[2] or "") for r in rows} if rows else None
+
 
 class DbApiBackend(Backend):
     """Any DB-API connection; `paramstyle` follows the driver (psycopg: format, oracledb: numeric)."""
@@ -70,3 +77,24 @@ class DbApiBackend(Backend):
             cur.close()
         self.conn.commit()
         return n
+
+    def fetch(self, sql: str, args: tuple = ()) -> list[tuple]:
+        cur = self.conn.cursor()
+        try:
+            cur.execute(self._text(sql), args)
+            return [tuple(r) for r in cur.fetchall()]
+        finally:
+            cur.close()
+
+    def columns(self, table: str) -> dict[str, str] | None:
+        dialect = self.capabilities.dialect
+        if dialect == "sqlite":
+            rows = self.fetch(f'PRAGMA table_info("{table}")')
+            return {r[1].lower(): (r[2] or "") for r in rows} if rows else None
+        if dialect == "oracle":
+            rows = self.fetch("SELECT column_name, data_type FROM all_tab_columns WHERE table_name = ?",
+                              (table.upper(),))
+        else:
+            rows = self.fetch("SELECT column_name, data_type FROM information_schema.columns WHERE table_name = ?",
+                              (table,))
+        return {str(r[0]).lower(): str(r[1] or "") for r in rows} if rows else None

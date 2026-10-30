@@ -70,6 +70,11 @@ def build_server(studio: Studio, *, role: str | None = None, principal: dict | N
         return tools.describe()
 
     @server.tool()
+    def list_modules() -> list[dict]:
+        """The ontology modules plugged into this studio: core concepts, domains, industry and customer layers."""
+        return tools.list_modules()
+
+    @server.tool()
     def list_backends() -> dict:
         """Backends this studio can run queries on, with what each supports."""
         return tools.list_backends()

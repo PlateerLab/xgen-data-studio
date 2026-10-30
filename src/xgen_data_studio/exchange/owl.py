@@ -25,10 +25,27 @@ def _labels(text: str, lang: str = "ko") -> list[tuple[str, str]]:
     return [(RDFS + "label", literal(text, "string", lang))] if text else []
 
 
-def to_owl(onto: Ontology) -> tuple[str, ExchangeReport]:
+SKOS = "http://www.w3.org/2004/02/skos/core#"
+DCT = "http://purl.org/dc/terms/"
+
+
+def module_iri(name: str) -> str:
+    return f"urn:xgen-data-studio:module:{name}"
+
+
+def _meta(el, origin: dict[str, str] | None, eid: str) -> list[tuple[str, str]]:
+    out = [(SKOS + "exactMatch", a) for a in getattr(el, "aligned", [])]
+    if getattr(el, "cite", ""):
+        out.append((DCT + "source", literal(el.cite, "string", "ko")))
+    if origin and origin.get(eid):
+        out.append((RDFS + "isDefinedBy", module_iri(origin[eid])))
+    return out
+
+
+def to_owl(onto: Ontology, *, origin: dict[str, str] | None = None) -> tuple[str, ExchangeReport]:
     rep = ExchangeReport()
     ns = onto.namespace
-    tt = Turtle({"owl": OWL, "rdfs": RDFS, "xsd": XSD, "ex": ns})
+    tt = Turtle({"owl": OWL, "rdfs": RDFS, "xsd": XSD, "skos": SKOS, "dcterms": DCT, "ex": ns})
     head = ns.rstrip("#/")
     tt.add(head, [(RDF_TYPE, OWL + "Ontology"), (OWL + "versionInfo", literal(onto.version, "string")),
                   *_labels(onto.label or onto.name)])
@@ -41,6 +58,7 @@ def to_owl(onto: Ontology) -> tuple[str, ExchangeReport]:
             pairs.append((RDFS + "comment", literal(o.description, "string", "ko")))
         for parent in ([o.parent] if o.parent else []) + o.implements:
             pairs.append((RDFS + "subClassOf", ns + parent))
+        pairs += _meta(o, origin, f"object:{o.name}")
         tt.add(ns + o.name, pairs)
         rep.preserved.append(f"class {o.name}")
         if o.states:
@@ -68,6 +86,8 @@ def to_owl(onto: Ontology) -> tuple[str, ExchangeReport]:
             items = " ".join(f'"{escape(v)}"' for v in p.values)
             pairs[3] = (RDFS + "range", f"[ a rdfs:Datatype ; owl:oneOf ( {items} ) ]")
             rep.adjusted.append(f"enum {name} -> datatype enumeration of strings")
+        owner = next(o for o in onto.objects.values() if name in o.properties)
+        pairs += _meta(p, origin, f"property:{owner.name}.{name}")
         tt.add(ns + name, pairs)
         rep.preserved.append(f"property {name}")
 
@@ -85,6 +105,7 @@ def to_owl(onto: Ontology) -> tuple[str, ExchangeReport]:
             pairs.append((RDF_TYPE, OWL + "TransitiveProperty"))
         if lk.symmetric:
             pairs.append((RDF_TYPE, OWL + "SymmetricProperty"))
+        pairs += _meta(lk, origin, f"link:{lk.name}")
         tt.add(ns + lk.name, pairs)
         rep.preserved.append(f"link {lk.name}")
         if lk.inverse:

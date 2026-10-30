@@ -30,17 +30,25 @@ studio.decide("returnEligibility", "I1001")        # outputs, the rule that fire
 
 ## What it looks like
 
-The screens below are the studio page that `xds preview` writes for the example in `examples/commerce`.
-Nothing on them is drawn by hand: the compiled queries, the rows from both backends, the decision with its
-evidence and the reach of a column change are what the library computed for that example.
+The screens below are the studio page that `xds preview` writes for the example library in `examples/library`
+(common concepts, commerce, finance, a fashion extension, one customer's differences, and the bindings to two
+databases). Nothing on them is drawn by hand: the modules, the compiled queries, the rows from both backends, the
+decision with its evidence and the reach of a column change are what the library computed for that example.
+
+<p align="center">
+  <img src="assets/screens/library.png" alt="Ontology library screen: every domain package with its kind, version, requirements and an on/off switch for this studio, the layers plugged in now, and what unplugging a module would take away" width="920">
+</p>
+
+<p align="center"><b>The ontology library.</b> Commerce, finance and every other domain live as separate, versioned packages;
+a studio plugs in the ones it needs, and the screen shows what unplugging one would take away before it happens.</p>
 
 <table>
   <tr>
-    <td width="50%"><img src="assets/screens/ontology.png" alt="Ontology screen: schema graph of the bound object types and the selected type's properties with their source columns"></td>
+    <td width="50%"><img src="assets/screens/ontology.png" alt="Ontology screen: schema graph coloured by the module each type comes from, domain types hanging under common concepts, and the selected type's properties with their columns and modules"></td>
     <td width="50%"><img src="assets/screens/query.png" alt="Query screen: one ontology query, its text in seven backend languages, and identical rows from the SQL source and the SPARQL graph"></td>
   </tr>
   <tr>
-    <td><b>Ontology.</b> Object types and links bound to tables, each property with the column it reads, the state machine, the links in and out.</td>
+    <td><b>Ontology.</b> Every type coloured by the module it comes from; domain types hang under common concepts (customer and borrower under party, order and loan under agreement); each property shows its column and module, each type its standard alignments.</td>
     <td><b>One query, every language.</b> The ontology query, its text for PostgreSQL, MySQL, Oracle, Cypher 25, GQL, SPARQL and SQL/PGQ, and the rows from each backend side by side.</td>
   </tr>
   <tr>
@@ -48,7 +56,7 @@ evidence and the reach of a column change are what the library computed for that
     <td><img src="assets/screens/map.png" alt="Data map screen: everything that depends on one column, what an agent can reach, and the data nobody uses"></td>
   </tr>
   <tr>
-    <td><b>Decide and act.</b> A decision table, the rule that fired and the source column behind every input; an agent's action request with its checks, waiting for a person.</td>
+    <td><b>Decide and act.</b> A decision table — here with the customer's own VIP rule plugged in ahead of the standard ones, each rule citing its policy — the source column behind every input, and an agent's action request waiting for a person.</td>
     <td><b>The data map.</b> What a column change touches, from property to agent; what one agent can reach; what nobody uses.</td>
   </tr>
 </table>
@@ -58,6 +66,8 @@ evidence and the reach of a column change are what the library computed for that
 | Module | What it does |
 |---|---|
 | `model` · `validate` | The definition: object types (key, table, properties with type, enum values and column), links (`on` a join or `via` a link table; cardinality, inverse, transitive, symmetric, required), interfaces, state machines, decision tables, actions, roles with row filters, registered queries and validation questions. JSON or YAML, checked for consistency before anything runs |
+| `modules` · `library` | Domain knowledge as packages: common concepts, domains, industry extensions, one customer's differences and the bindings to a database, each versioned and kept apart in a library, composed in requirement order with the origin of every element recorded, plugged in and out at run time |
+| `bindings` | The definition checked against the actual database: tables and columns, types, duplicate keys, missing required values, enum values the definition does not know, links that point at nothing |
 | `ir` · `check` | The ontology query: a typed graph pattern with filters, `exists`, multi-hop links, aggregates, order and parameters. The check resolves link direction (inverse names included), types every literal and parameter, and explains what is wrong in plain sentences |
 | `compile` | One compiler per language: SQL (PostgreSQL and SQLite natively, every other dialect through sqlglot), Cypher 25, ISO GQL, SPARQL 1.1, SQL/PGQ, and the `CREATE PROPERTY GRAPH` for the bound tables. Literals are always bound as parameters; NULLs sort last everywhere |
 | `parse` | SPARQL and Cypher read back into the IR, so a query in either runs on any backend |
@@ -106,6 +116,56 @@ The full example is [`examples/commerce/ontology.yaml`](examples/commerce/ontolo
 eight links, a decision, an action, two roles, nine registered queries and seven validation questions.
 Decision cells are a small FEEL subset: `-`, `null`, `not null`, `<= 7`, `[1..7]`, `"VIP"`, `!= "NORMAL"`,
 `in ["A", "B"]`, `true`.
+
+## Plug domains in and out
+
+Domain knowledge comes and goes, so it is packaged. A library keeps each package apart as
+`<name>/<version>.yaml`; a studio composes the ones it needs.
+
+| Kind | Example | What it holds |
+|---|---|---|
+| `core` | `core` — 공통 개념 | Concepts every domain hangs from: party, agreement, the `Named` interface |
+| `domain` | `commerce`, `finance` | The standard definition of a domain, aligned to schema.org, GS1 or FIBO, with no tables in it |
+| `industry` | `fashion`, `food` | What one industry adds on top of the standard: material and season, expiry and storage |
+| `customer` | `acme-overlay` | Only what one customer does differently: an extra property, a VIP rule placed ahead of the standard ones, a query taken out |
+| `binding` | `commerce-bindings` | The tables and columns of one database. Swap it, and the same definition reads another system |
+
+```yaml
+module: acme-overlay
+kind: customer
+requires: [commerce, commerce-bindings]
+extend:
+  objects:
+    OrderItem: {properties: {gift_wrap: {type: boolean, label: 선물 포장}}}
+  decisions:
+    returnEligibility:
+      inputs: {customer_grade: {type: string, path: [itemOf, placedBy], property: grade}}
+      rules_prepend:
+        - {id: vip-window, when: {customer_grade: '"VIP"', days_since_delivery: "<= 14"},
+           then: {eligible: true, reason: VIP 고객은 14일까지 반품할 수 있습니다}, cite: ACME 운영 정책 4.1}
+remove: {queries: [wishlistCount]}
+```
+
+```python
+from xgen_data_studio.library import Library
+lib = Library("examples/library")
+studio = Studio.from_library(lib, ["commerce-bindings", "fashion", "acme-overlay", "finance-bindings"])  # + requirements
+db = studio.add_backend("source", SqliteBackend())
+for seed in ("examples/commerce/seed.sql", "examples/library/seed_finance.sql"):
+    db.script(open(seed, encoding="utf-8").read())
+
+studio.composition.owner("property:OrderItem.gift_wrap")     # 'acme-overlay': every element knows its module
+studio.detach_impact("fashion").removed                      # what would go, before anything goes
+studio.detach("acme-overlay"); studio.attach("acme-overlay") # the VIP rule leaves and comes back
+studio.detach("commerce")                                    # refused: three modules depend on it (cascade=True to take them too)
+studio.run("allParties")                                     # one concept, two domains: customers and borrowers
+studio.check_bindings()                                      # the definition against the actual database
+```
+
+A concept with no table of its own is asked through its subtypes: in SQL as the `UNION ALL` of their tables,
+in SPARQL and Cypher through the concept's type or label, and the conformance run checks the answers agree.
+`aligned` IRIs export as `skos:exactMatch`, `cite` as `dcterms:source`, the module as `rdfs:isDefinedBy`; an
+imported standard keeps its original IRIs as alignments.
 
 ## Ask once
 
@@ -227,7 +287,14 @@ xds sparql examples/commerce/studio.yaml query.rq --backend source
 xds decide examples/commerce/studio.yaml returnEligibility I1001
 xds questions examples/commerce/studio.yaml                    # validation questions and accuracy
 xds conformance examples/commerce/studio.yaml                  # every registered query on every backend
-xds preview examples/commerce/studio.yaml -o studio.html       # the page in the screenshots
+xds preview examples/library/studio.yaml -o studio.html        # the page in the screenshots
+xds library list examples/library                              # every package, its kind, versions and requirements
+xds library create my-lib energy --kind domain --label "에너지 설비" --requires core
+xds library import-owl my-lib fibo-loans.ttl fibo-loans --requires core
+xds library diff my-lib fashion 1.0.0 1.1.0                    # what a new version adds, removes, changes
+xds library compose examples/library commerce-bindings finance-bindings -o ontology.yaml
+xds modules examples/library/studio.yaml --impact fashion      # what detaching it would take away
+xds bindings examples/library/studio.yaml                      # the definition against the database
 ```
 
 A studio file names the ontology, the backends and what to project at start:
@@ -243,6 +310,10 @@ project: [graph]
 
 ## Design
 
+- **Domains are packages.** Commerce, finance and every later domain are versioned modules in a library; a
+  customer's differences and a database's bindings are modules too, so the standard is never edited to fit one site.
+- **Domains meet in concepts.** Domain types hang from shared concepts and align to public vocabularies, so a
+  question about a concept reaches every domain that specialises it.
 - **One definition, many executions.** The definition is the only artifact people edit; SQL, Cypher, GQL,
   SPARQL, SQL/PGQ, OWL, SHACL, R2RML and JDM are all generated from it.
 - **Values stay in the source.** Object types are bound to tables; a graph store is a projection you opt into,
@@ -258,6 +329,8 @@ project: [graph]
 ```
 src/xgen_data_studio/
   model.py validate.py      # the definition and its checks
+  modules.py library.py     # packages, composition, attach / detach; the library of versioned packages
+  bindings.py               # the definition against the actual database
   ir.py check.py values.py  # the query IR, its check, typed values
   compile/                  # sql (+ dialects) · cypher (+ gql) · sparql · pgq
   parse/                    # sparql · cypher -> IR
@@ -267,15 +340,17 @@ src/xgen_data_studio/
   reason/                   # rules · shacl · owl_rl
   exchange/                 # owl · r2rml · importer
   catalog.py nl.py conformance.py studio.py config.py tools.py mcp_server.py preview.py cli.py
-examples/commerce/          # ontology, seed data, studio file, demo
+examples/commerce/          # one ontology file, seed data, studio file, demo
+examples/library/           # the same domain as packages, plus finance, fashion, food and a customer overlay
 tools/                      # render_screens.py (the README images), architecture.html
 ```
 
 ## Roadmap
 
-- conformance runs against live PostgreSQL, Neo4j and Fuseki in CI
-- Gremlin as a compile target once TinkerPop 4 is released
-- an editable definition store with change proposals and versions
+- computed properties: expressions in the definition, compiled to every backend language
+- binding suggestions from source column names, types and value spreads, confirmed by a person
+- review of a new module version before it is plugged in: its impact, the database check and the questions, in one approval
+- conformance runs against live PostgreSQL, Neo4j and Fuseki in CI; Gremlin once TinkerPop 4 is released
 - the studio page as a served application rather than a static file
 
 ## Repository model

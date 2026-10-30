@@ -26,6 +26,8 @@ class Property:
     unit: str = ""
     values: list[str] = field(default_factory=list)
     required: bool = False
+    cite: str = ""
+    aligned: list[str] = field(default_factory=list)
 
     @property
     def col(self) -> str:
@@ -62,6 +64,12 @@ class ObjectType:
     parent: str = ""
     implements: list[str] = field(default_factory=list)
     states: StateMachine | None = None
+    cite: str = ""
+    aligned: list[str] = field(default_factory=list)
+
+    @property
+    def abstract(self) -> bool:
+        return not self.table
 
     def prop(self, name: str) -> Property:
         try:
@@ -95,6 +103,8 @@ class LinkType:
     transitive: bool = False
     symmetric: bool = False
     required: bool = False
+    cite: str = ""
+    aligned: list[str] = field(default_factory=list)
 
     @property
     def bound(self) -> bool:
@@ -121,6 +131,7 @@ class DecisionRule:
     then: dict[str, Any]
     id: str = ""
     note: str = ""
+    cite: str = ""
 
 
 @dataclass
@@ -132,6 +143,7 @@ class DecisionTable:
     target: str = ""
     label: str = ""
     hit_policy: str = "first"
+    cite: str = ""
 
 
 @dataclass
@@ -151,6 +163,7 @@ class ActionType:
     set: dict[str, Any] = field(default_factory=dict)
     transition_to: str = ""
     approval: bool = True
+    cite: str = ""
 
 
 @dataclass
@@ -278,7 +291,8 @@ def _prop(name: str, d: Any) -> Property:
         d = {"type": d}
     return Property(name=name, type=d.get("type", "string"), label=d.get("label", ""),
                     description=d.get("description", ""), column=d.get("column", ""), unit=d.get("unit", ""),
-                    values=list(d.get("values", [])), required=bool(d.get("required", False)))
+                    values=list(d.get("values", [])), required=bool(d.get("required", False)),
+                    cite=d.get("cite", ""), aligned=list(d.get("aligned", [])))
 
 
 def _states(d: dict | None) -> StateMachine | None:
@@ -295,7 +309,7 @@ def _object(name: str, d: dict) -> ObjectType:
                       label=d.get("label", ""), description=d.get("description", ""),
                       table=source.get("table", d.get("table", "")), title=d.get("title", ""),
                       parent=d.get("parent", ""), implements=list(d.get("implements", [])),
-                      states=_states(d.get("states")))
+                      states=_states(d.get("states")), cite=d.get("cite", ""), aligned=list(d.get("aligned", [])))
 
 
 def _link(name: str, d: dict) -> LinkType:
@@ -310,7 +324,8 @@ def _link(name: str, d: dict) -> LinkType:
                     via=Via(via["table"], via["source"], via["target"]) if via else None,
                     label=d.get("label", ""), description=d.get("description", ""), inverse=d.get("inverse", ""),
                     transitive=bool(d.get("transitive", False)), symmetric=bool(d.get("symmetric", False)),
-                    required=bool(d.get("required", False)))
+                    required=bool(d.get("required", False)), cite=d.get("cite", ""),
+                    aligned=list(d.get("aligned", [])))
 
 
 def _decision(name: str, d: dict) -> DecisionTable:
@@ -319,11 +334,11 @@ def _decision(name: str, d: dict) -> DecisionTable:
         v = dict(v)
         inputs[k] = DecisionInput(name=k, type=v.pop("type", "string"), source=v)
     rules = [DecisionRule(when={k: str(x) for k, x in (r.get("when") or {}).items()}, then=dict(r.get("then") or {}),
-                          id=r.get("id", f"r{i + 1}"), note=r.get("note", ""))
+                          id=r.get("id", f"r{i + 1}"), note=r.get("note", ""), cite=r.get("cite", ""))
              for i, r in enumerate(d.get("rules", []))]
     return DecisionTable(name=name, inputs=inputs, outputs=dict(d.get("outputs", {})), rules=rules,
                          target=d.get("target", ""), label=d.get("label", ""),
-                         hit_policy=d.get("hit_policy", "first"))
+                         hit_policy=d.get("hit_policy", "first"), cite=d.get("cite", ""))
 
 
 def _action(name: str, d: dict) -> ActionType:
@@ -331,7 +346,7 @@ def _action(name: str, d: dict) -> ActionType:
                       states=list(c.get("states", []))) for c in d.get("criteria", [])]
     return ActionType(name=name, target=d["target"], label=d.get("label", ""), parameters=dict(d.get("parameters", {})),
                       criteria=crit, set=dict(d.get("set", {})), transition_to=d.get("transition_to", ""),
-                      approval=bool(d.get("approval", True)))
+                      approval=bool(d.get("approval", True)), cite=d.get("cite", ""))
 
 
 def _role(name: str, d: dict) -> Role:
@@ -371,7 +386,8 @@ def _to_dict(o: Ontology) -> dict:
     objects = {}
     for t in o.objects.values():
         props = {p.name: _clean({"type": p.type, "label": p.label, "description": p.description,
-                                 "column": p.column, "unit": p.unit, "values": p.values, "required": p.required})
+                                 "column": p.column, "unit": p.unit, "values": p.values, "required": p.required,
+                                 "cite": p.cite, "aligned": p.aligned})
                  for p in t.properties.values()}
         sm = None
         if t.states:
@@ -380,25 +396,28 @@ def _to_dict(o: Ontology) -> dict:
                                          for x in t.states.transitions]})
         objects[t.name] = _clean({"label": t.label, "description": t.description,
                                   "source": {"table": t.table} if t.table else None, "key": t.key, "title": t.title,
-                                  "parent": t.parent, "implements": t.implements, "properties": props, "states": sm})
+                                  "parent": t.parent, "implements": t.implements, "cite": t.cite,
+                                  "aligned": t.aligned, "properties": props, "states": sm})
     links = {lk.name: _clean({"from": lk.source, "to": lk.target, "cardinality": lk.cardinality,
                               "on": {lk.on[0]: lk.on[1]} if lk.on else None,
                               "via": {"table": lk.via.table, "source": lk.via.source_column,
                                       "target": lk.via.target_column} if lk.via else None,
                               "label": lk.label, "description": lk.description, "inverse": lk.inverse,
-                              "transitive": lk.transitive, "symmetric": lk.symmetric, "required": lk.required})
+                              "transitive": lk.transitive, "symmetric": lk.symmetric, "required": lk.required,
+                              "cite": lk.cite, "aligned": lk.aligned})
              for lk in o.links.values()}
     decisions = {}
     for dt in o.decisions.values():
         decisions[dt.name] = _clean({
-            "label": dt.label, "target": dt.target, "hit_policy": dt.hit_policy,
+            "label": dt.label, "target": dt.target, "hit_policy": dt.hit_policy, "cite": dt.cite,
             "inputs": {i.name: {"type": i.type, **i.source} for i in dt.inputs.values()},
             "outputs": dt.outputs,
-            "rules": [_clean({"id": r.id, "when": r.when, "then": r.then, "note": r.note}) for r in dt.rules]})
+            "rules": [_clean({"id": r.id, "when": r.when, "then": r.then, "note": r.note, "cite": r.cite})
+                      for r in dt.rules]})
     actions = {a.name: _clean({"label": a.label, "target": a.target, "parameters": a.parameters,
                                "criteria": [_clean({"decision": c.decision, "expect": c.expect, "states": c.states})
                                             for c in a.criteria],
-                               "set": a.set, "transition_to": a.transition_to})
+                               "set": a.set, "transition_to": a.transition_to, "cite": a.cite})
                | {"approval": a.approval} for a in o.actions.values()}
     roles = {r.name: _clean({"label": r.label, "read": r.read, "row_filters": r.row_filters, "run": r.run,
                              "request": r.request, "execute": r.execute}) for r in o.roles.values()}

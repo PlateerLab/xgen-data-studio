@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from xgen_data_studio.check import aliases_of, find_prop
+from xgen_data_studio.check import aliases_of, all_props, column_of, concrete_subtypes, find_prop
 from xgen_data_studio.compile.base import Compiled, CompileError, Compiler, Params
 from xgen_data_studio.ir import Agg, And, Cmp, Contains, Edge, Exists, In, IsNull, Not, Or, Query, Ref
 
@@ -47,21 +47,34 @@ class SqlCompiler(Compiler):
 
     def _table(self, alias: str) -> str:
         obj = self.onto.obj(self._types[alias])
-        if not obj.table:
-            raise CompileError(f"{obj.name} has no source table")
-        return qi(obj.table)
+        if obj.table:
+            return qi(obj.table)
+        subs = concrete_subtypes(self.onto, obj.name)
+        if not subs:
+            raise CompileError(f"{obj.name} has no source table and no bound subtype")
+        names = all_props(self.onto, obj.name)
+        parts = []
+        for s in subs:
+            cols = ", ".join(f"{qi(column_of(self.onto, s, n))} AS {qi(n)}" for n in names)
+            parts.append(f"SELECT {cols}, '{s}' AS {qi('__type')} FROM {qi(self.onto.objects[s].table)}")
+        return "(" + " UNION ALL ".join(parts) + ")"
 
     def _col(self, ref: Ref) -> str:
-        p = find_prop(self.onto, self._types[ref.alias], ref.prop)
-        return f"t_{ref.alias}.{qi(p.col)}"
+        t = self._types[ref.alias]
+        find_prop(self.onto, t, ref.prop)
+        if not self.onto.objects[t].table:
+            return f"t_{ref.alias}.{qi(ref.prop)}"
+        return f"t_{ref.alias}.{qi(column_of(self.onto, t, ref.prop))}"
 
     def _key(self, alias: str) -> str:
         obj = self.onto.obj(self._types[alias])
-        return f"t_{alias}.{qi(obj.key_prop.col)}"
+        return f"t_{alias}.{qi(obj.key if not obj.table else obj.key_prop.col)}"
 
     def _closure(self, lk, e: Edge) -> str:
         self._n += 1
         r, src = f"r_{self._n}", self.onto.obj(lk.source)
+        if not src.table:
+            raise CompileError(f"hops on '{lk.name}' need {src.name} bound to a table")
         if lk.via:
             base = (f"SELECT {qi(lk.via.source_column)} AS s, {qi(lk.via.target_column)} AS t "
                     f"FROM {qi(lk.via.table)}")

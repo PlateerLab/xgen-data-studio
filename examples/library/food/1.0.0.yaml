@@ -1,0 +1,24 @@
+module: food
+version: 1.0.0
+kind: industry
+label: 식품 업종 확장
+description: 이커머스 표준에 유통기한과 보관 방식을 얹습니다. 라이브러리에는 있지만 예시 스튜디오에는 꽂지 않았습니다.
+requires: [commerce]
+
+extend:
+  objects:
+    Sku:
+      properties:
+        expires_on: {type: date, label: 유통기한}
+        storage: {type: enum, values: [ROOM, CHILLED, FROZEN], label: 보관 방식}
+
+queries:
+  expiringBefore:
+    label: 유통기한 임박 단품
+    params: {before: date}
+    example: {before: "2026-11-15"}
+    query:
+      match: {s: Sku}
+      where: {lt: [s.expires_on, {param: before}]}
+      return: [s.sku_id, s.expires_on, s.storage]
+      order: [expires_on]

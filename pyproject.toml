@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "xgen-data-studio"
-version = "0.1.0"
+version = "0.2.0"
 description = "One domain ontology definition, executed on whatever database, graph store or reasoner a deployment has: a query IR compiled to SQL, Cypher, GQL, SPARQL and SQL/PGQ, with decisions, actions, roles, an asset graph and conformance tests."
 readme = "README.md"
 requires-python = ">=3.10"

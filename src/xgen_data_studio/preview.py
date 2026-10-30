@@ -14,6 +14,10 @@ from xgen_data_studio.studio import Studio
 
 TARGETS = [("sql:postgres", "PostgreSQL"), ("sql:mysql", "MySQL"), ("sql:oracle", "Oracle"),
            ("cypher", "Cypher 25"), ("gql", "GQL"), ("sparql", "SPARQL 1.1"), ("sqlpgq", "SQL/PGQ")]
+MODULE_COLOR = {"core": "#7a5af8", "domain": "#1a73e8", "industry": "#0f9d8a", "customer": "#d9822b",
+                "binding": "#8a96a5"}
+MODULE_KIND = {"core": "공통 개념", "domain": "도메인", "industry": "업종 확장", "customer": "고객사 차이",
+               "binding": "바인딩"}
 KIND_LABEL = {"column": "컬럼", "property": "속성", "query": "등록 질의", "decision": "결정", "action": "액션",
               "role": "역할", "agent": "에이전트", "link": "관계", "object": "객체", "table": "테이블", "file": "파일",
               "collection": "컬렉션", "folder": "폴더", "database": "데이터베이스"}
@@ -31,7 +35,8 @@ body { font-family:"Pretendard","Malgun Gothic",-apple-system,sans-serif; color:
 body.single .screen { display:none; margin:0; border-radius:0; box-shadow:none; }
 body.single .screen.on { display:grid; }
 .top { grid-column:1 / 3; display:flex; align-items:center; gap:14px; padding:0 22px; border-bottom:1px solid var(--line); }
-.brand { display:flex; align-items:center; gap:10px; font-weight:800; font-size:16px; color:var(--navy); }
+.brand { display:flex; align-items:center; gap:10px; font-weight:800; font-size:16px; color:var(--navy);
+  white-space:nowrap; }
 .logo { width:28px; height:28px; border-radius:8px; background:linear-gradient(135deg,#1a73e8,#13213c);
   display:grid; place-items:center; color:#fff; font-size:13px; font-weight:800; }
 .top .chip { margin-left:4px; }
@@ -115,6 +120,18 @@ pre.code .k { color:#7fb2ff; } pre.code .s { color:#9fe0b8; } pre.code .c { colo
 .log div { display:grid; grid-template-columns:70px 1fr auto; gap:8px; padding:6px 0; border-bottom:1px dashed #edf0f4; }
 svg text { font-family:"Pretendard","Malgun Gothic",sans-serif; }
 .legend { display:flex; gap:14px; color:var(--muted); font-size:12px; }
+.switch { width:36px; height:20px; border-radius:999px; background:#cfd6e0; position:relative; display:inline-block; }
+.switch::after { content:""; position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%;
+  background:#fff; box-shadow:0 1px 2px rgba(0,0,0,.2); }
+.switch.on { background:var(--blue); } .switch.on::after { left:18px; }
+.kind { display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:700; padding:3px 9px;
+  border-radius:999px; background:#fff; border:1px solid var(--line); white-space:nowrap; }
+.kind i { width:8px; height:8px; border-radius:50%; display:inline-block; }
+.layer { display:grid; grid-template-columns:92px 1fr; gap:10px; align-items:center; padding:9px 0;
+  border-bottom:1px dashed #edf0f4; }
+.layer:last-child { border-bottom:0; }
+.layer .lbl { font-size:12px; font-weight:800; color:#3a4656; display:flex; align-items:center; gap:7px; }
+.layer .lbl i { width:4px; height:22px; border-radius:2px; display:inline-block; }
 .legend i { display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:5px; vertical-align:-1px; }
 """
 
@@ -126,8 +143,10 @@ ICONS = {
     "decide": '<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/>',
     "check": '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 12l3 3 5-6"/>',
     "map": '<path d="M9 4l-6 3v13l6-3 6 3 6-3V4l-6 3z"/><path d="M9 4v13M15 7v13"/>',
+    "library": '<rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="16" rx="1"/>'
+               '<path d="M17 5.5l3.5-1 3 15-3.5 1z"/>',
 }
-NAV = [("space", "데이터 공간"), ("onto", "온톨로지"), ("query", "질의"), ("decide", "결정 · 액션"),
+NAV = [("space", "데이터 공간"), ("library", "온톨로지 라이브러리"), ("onto", "온톨로지"), ("query", "질의"), ("decide", "결정 · 액션"),
        ("check", "검증"), ("map", "데이터 지도")]
 
 
@@ -152,9 +171,16 @@ def _frame(screen_id: str, active: str, studio: Studio, body: str, counts: dict[
         f'{f"<span class=n>{counts[k]}</span>" if counts.get(k) else ""}</a>' for k, label in NAV)
     backends = "".join(f'<span class="chip"><span class="dot"></span>{_e(n)} · {_e(b.capabilities.language.upper())}'
                        f'</span>' for n, b in studio.backends.items())
+    comp = studio.composition
+    if comp:
+        domains = [m.label or m.name for m in comp.modules if m.kind == "domain"]
+        ident = (f'<span class="chip b">{_e(" · ".join(domains) or o.name)}</span>'
+                 f'<span class="chip">모듈 {len(comp.modules)}개</span>')
+    else:
+        ident = f'<span class="chip b">{_e(o.label or o.name)}</span><span class="chip">판본 {_e(o.version)}</span>'
     return f"""<section class="screen" id="{screen_id}">
   <div class="top"><div class="brand"><div class="logo">X</div>XGEN 데이터 스튜디오</div>
-    <span class="chip b">{_e(o.label or o.name)}</span><span class="chip">판본 {_e(o.version)}</span>
+    {ident}
     <div class="grow"></div>{backends}<div class="who"><div class="avatar">운영</div>운영자</div></div>
   <aside class="side"><h6>데이터 스튜디오</h6>{nav}
     <div class="foot"><b>정의는 한곳에, 값은 원천에</b>같은 정의가 원천 DB · 그래프 · 추론기에서 같은 답을 냅니다.</div></aside>
@@ -168,6 +194,9 @@ def _layers(studio: Studio) -> dict[str, int]:
     for lk in o.links.values():
         if lk.source != lk.target:
             out_edges[lk.source].add(lk.target)
+    for obj in o.objects.values():
+        if obj.parent in o.objects:
+            out_edges[obj.parent].add(obj.name)
     longest: dict[str, int] = defaultdict(int)
     for _ in range(len(o.objects)):
         for s, ts in out_edges.items():
@@ -197,7 +226,9 @@ def _flow_svg(rows: list[list[tuple[str, str, str, bool]]], edges: list[tuple[st
         parts.append(f'<text x="12" y="{30 + r * row_gap + bh / 2 + 4}" font-size="12" font-weight="700" '
                      f'fill="#8a96a5">{_e(lbl)}</text>')
     labels = []
-    for src, dst, label in edges:
+    for e in edges:
+        src, dst, label = e[:3]
+        dash = ' stroke-dasharray="5 4"' if len(e) > 3 and e[3] else ""
         if src not in pos or dst not in pos:
             continue
         sx, sy = pos[src]
@@ -217,17 +248,20 @@ def _flow_svg(rows: list[list[tuple[str, str, str, bool]]], edges: list[tuple[st
             x1, y1, x2, y2 = sx + bw / 2, sy + bh, tx + bw / 2, ty
             d = f"M{x1},{y1} C{x1},{(y1 + y2) / 2} {x2},{(y1 + y2) / 2} {x2},{y2 - 2}"
             lx, ly, anchor = (x1 + x2) / 2 + 8, (y1 + y2) / 2 + 4, "start"
-        parts.append(f'<path d="{d}" fill="none" stroke="#9aa6b6" stroke-width="1.6" marker-end="url(#am)"/>')
+        parts.append(f'<path d="{d}" fill="none" stroke="#9aa6b6" stroke-width="1.6" marker-end="url(#am)"{dash}/>')
         if label:
             labels.append(f'<text x="{lx}" y="{ly}" font-size="11.5" fill="#5f6b7a" text-anchor="{anchor}" '
                           f'paint-order="stroke" stroke="#fff" stroke-width="4">{_e(label)}</text>')
     for items in rows:
-        for nid, title, sub, on in items:
+        for nid, title, sub, on, *rest in items:
             x, y = pos[nid]
+            accent = rest[0] if rest else ""
             fill, stroke, tc, sc = (("#13213c", "#13213c", "#fff", "#b9c6dc") if on
-                                    else ("#fff", "#c9d2de", "#1b2330", "#8a96a5"))
+                                    else ("#fff", accent or "#c9d2de", "#1b2330", "#8a96a5"))
             parts.append(f'<rect x="{x}" y="{y}" width="{bw}" height="{bh}" rx="11" fill="{fill}" stroke="{stroke}" '
-                         f'stroke-width="1.4"/>')
+                         f'stroke-width="{1.8 if accent and not on else 1.4}"/>')
+            if accent:
+                parts.append(f'<circle cx="{x + 13}" cy="{y + 13}" r="4" fill="{accent}"/>')
             parts.append(f'<text x="{x + bw / 2}" y="{y + (21 if sub else bh / 2 + 5)}" font-size="13.5" '
                          f'font-weight="800" fill="{tc}" text-anchor="middle">{_e(title)}</text>')
             if sub:
@@ -237,14 +271,25 @@ def _flow_svg(rows: list[list[tuple[str, str, str, bool]]], edges: list[tuple[st
             f'role="img">{"".join(parts + labels)}</svg>')
 
 
+def _module_kind(studio: Studio, element: str) -> str:
+    comp = studio.composition
+    if comp is None:
+        return ""
+    owner = comp.owner(element)
+    return next((m.kind for m in comp.modules if m.name == owner), "")
+
+
 def _schema_svg(studio: Studio, selected: str) -> str:
     o = studio.onto
     layers = _layers(studio)
-    rows: list[list[tuple[str, str, str, bool]]] = [[] for _ in range(max(layers.values()) + 1)]
+    rows: list[list[tuple]] = [[] for _ in range(max(layers.values()) + 1)]
     for name, obj in o.objects.items():
-        rows[layers[name]].append((name, obj.label or name, f"{name} · {obj.table}", name == selected))
-    edges = [(lk.source, lk.target, lk.label or lk.name) for lk in o.links.values()]
-    return _flow_svg(rows, edges, w=860, row_gap=100)
+        sub = f"{name} · {obj.table}" if obj.table else f"{name} · 상위 개념"
+        accent = MODULE_COLOR.get(_module_kind(studio, f"object:{name}"), "")
+        rows[layers[name]].append((name, obj.label or name, sub, name == selected, accent))
+    edges: list[tuple] = [(lk.source, lk.target, lk.label or lk.name) for lk in o.links.values()]
+    edges += [(obj.parent, obj.name, "하위 유형", True) for obj in o.objects.values() if obj.parent in o.objects]
+    return _flow_svg(rows, edges, w=900, row_gap=88, bw=150, bh=46)
 
 
 def _screen_ontology(studio: Studio, selected: str, counts) -> str:
@@ -253,10 +298,35 @@ def _screen_ontology(studio: Studio, selected: str, counts) -> str:
     stats = [(len(o.objects), "객체"), (len(o.links), "관계"), (sum(len(x.properties) for x in o.objects.values()),
              "속성"), (len(o.decisions), "결정"), (len(o.actions), "액션"), (len(o.queries), "등록 질의")]
     stat_html = "".join(f'<div class="stat"><b>{n}</b><span>{_e(lbl)}</span></div>' for n, lbl in stats)
+    def owner_chip(p) -> str:
+        kind = _module_kind(studio, f"property:{obj.name}.{p.name}")
+        if not kind:
+            return ""
+        name = studio.composition.owner(f"property:{obj.name}.{p.name}")
+        return (f'<span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;white-space:nowrap">'
+                f'<i style="width:8px;height:8px;border-radius:50%;background:{MODULE_COLOR[kind]};display:inline-block">'
+                f'</i>{_e(name)}</span>')
+
     rows = "".join(
         f'<tr><td><b>{_e(p.label or p.name)}</b><div class="muted mono">{_e(p.name)}</div></td>'
         f'<td><span class="chip{" b" if p.name == obj.key else ""}">{_e(p.type)}</span></td>'
-        f'<td class="mono">{_e(obj.table)}.{_e(p.col)}</td></tr>' for p in obj.properties.values())
+        f'<td class="mono">{_e(p.col)}</td><td>{owner_chip(p)}</td></tr>' for p in obj.properties.values())
+    if studio.composition:
+        kinds = [m.kind for m in studio.composition.modules]
+        legend = "".join(f'<span><i style="background:{MODULE_COLOR[k]}"></i>{MODULE_KIND[k]}</span>'
+                         for k in dict.fromkeys(kinds) if k != "binding") + '<span>- - 하위 유형</span>'
+    else:
+        legend = ('<span><i style="background:#13213c"></i>선택</span><span><i style="background:#fff;'
+                  'border:1px solid #c9d2de"></i>객체</span>')
+    aligned = "".join(f'<span class="chip mono" style="font-size:11px">{_e(a.split("//", 1)[-1])}</span>'
+                      for a in obj.aligned)
+    if aligned:
+        aligned = ('<div style="margin-top:14px"><div class="muted" style="font-size:12px;font-weight:700;'
+                   f'margin-bottom:6px">표준 개념 정렬</div><div style="display:flex;gap:6px;flex-wrap:wrap">{aligned}</div></div>')
+    if obj.parent:
+        aligned = (f'<div style="margin-top:14px"><div class="muted" style="font-size:12px;font-weight:700;'
+                   f'margin-bottom:6px">상위 개념</div><span class="chip n">{_e(studio.onto.obj(obj.parent).label)} · '
+                   f'{_e(obj.parent)}</span></div>') + aligned
     states = ""
     if obj.states:
         states = " → ".join(f'<span class="chip{" n" if s == obj.states.initial else ""}">{_e(s)}</span>'
@@ -274,16 +344,95 @@ def _screen_ontology(studio: Studio, selected: str, counts) -> str:
   <span class="btn ghost">R2RML</span><span class="btn primary">변경 제안</span></div></div>
 <div class="stats">{stat_html}</div>
 <div class="grid" style="grid-template-columns:1.55fr 1fr">
-  <div class="card"><div class="ch">스키마 그래프<div class="right legend"><span><i style="background:#13213c"></i>선택</span>
-    <span><i style="background:#fff;border:1px solid #c9d2de"></i>객체</span><span>— 바인딩 관계 · - - 연결 테이블</span></div></div>
+  <div class="card"><div class="ch">스키마 그래프<div class="right legend">{legend}</div></div>
     <div class="cb" style="flex:1;padding:10px 12px">{_schema_svg(studio, selected)}</div></div>
   <div class="card"><div class="ch">{_e(obj.label)} <span class="muted mono" style="font-weight:600">{_e(obj.name)}</span>
     <div class="right"><span class="chip b">키 {_e(obj.key)}</span><span class="chip mono">{_e(obj.table)}</span></div></div>
-    <div class="cb"><table><tr><th>속성</th><th>타입</th><th>원천 컬럼</th></tr>{rows}</table>{states}
+    <div class="cb"><table><tr><th>속성</th><th>타입</th><th>원천 컬럼</th><th>모듈</th></tr>{rows}</table>{states}{aligned}
     <div style="margin-top:14px"><div class="muted" style="font-size:12px;font-weight:700;margin-bottom:6px">관계</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap">{link_html}</div></div></div></div>
 </div>"""
     return _frame("ontology", "onto", studio, body, counts)
+
+
+def _screen_library(studio: Studio, counts) -> str:
+    comp = studio.composition
+    active = {m.name for m in comp.modules} if comp else set()
+    if studio.library is not None:
+        rows = studio.library.list()
+    elif comp:
+        rows = [{"name": m.name, "label": m.label, "kind": m.kind, "latest": m.version, "versions": [m.version],
+                 "requires": [str(r) for r in m.requires], "counts": m.counts()} for m in comp.modules]
+    else:
+        o = studio.onto
+        rows = [{"name": o.name, "label": o.label, "kind": "domain", "latest": o.version, "versions": [o.version],
+                 "requires": [], "counts": {"objects": len(o.objects), "links": len(o.links),
+                                            "decisions": len(o.decisions), "queries": len(o.queries)}}]
+        active = {o.name}
+    order = list(MODULE_KIND)
+    rows.sort(key=lambda r: (order.index(r["kind"]), r["name"]))
+    tabs = [f'<span class="tab on">전체 {len(rows)}</span>'] + [
+        f'<span class="tab">{MODULE_KIND[k]} {n}</span>' for k in order
+        if (n := sum(r["kind"] == k for r in rows))]
+    body_rows = []
+    for r in rows:
+        c = r["counts"]
+        parts = [f"객체 {c.get('objects', 0)}", f"관계 {c.get('links', 0)}", f"결정 {c.get('decisions', 0)}",
+                 f"질의 {c.get('queries', 0)}", f"확장 {c.get('extends', 0)}"]
+        made = " · ".join(x for x in parts if not x.endswith(" 0")) or "-"
+        req = " ".join(f'<span class="chip mono" style="font-size:11px">{_e(x)}</span>' for x in r["requires"]) or \
+            '<span class="muted">-</span>'
+        kind = r["kind"]
+        body_rows.append(
+            f'<tr><td><b>{_e(r["label"] or r["name"])}</b><div class="muted mono">{_e(r["name"])}</div></td>'
+            f'<td><span class="kind"><i style="background:{MODULE_COLOR[kind]}"></i>{MODULE_KIND[kind]}</span></td>'
+            f'<td class="mono" style="white-space:nowrap">{_e(r["latest"])}</td>'
+            f'<td>{req}</td><td class="muted" style="font-size:12.5px">{_e(made)}</td>'
+            f'<td style="text-align:center"><span class="switch{" on" if r["name"] in active else ""}"></span></td></tr>')
+    layers = ""
+    if comp:
+        for k in order:
+            ms = [m for m in comp.modules if m.kind == k]
+            if not ms:
+                continue
+            chips = " ".join(f'<span class="chip">{_e(m.label or m.name)} <span class="muted mono">{_e(m.version)}</span>'
+                             f'</span>' for m in ms)
+            layers += (f'<div class="layer"><div class="lbl"><i style="background:{MODULE_COLOR[k]}"></i>{MODULE_KIND[k]}'
+                       f'</div><div style="display:flex;gap:6px;flex-wrap:wrap">{chips}</div></div>')
+    impacts = ""
+    if comp:
+        picks = [m.name for m in comp.modules if m.kind == "industry"][:1] + \
+                [m.name for m in comp.modules if m.kind == "domain"][:1]
+        for name in picks:
+            imp = studio.detach_impact(name)
+            label = next(m.label for m in comp.modules if m.name == name)
+            if imp.ok:
+                items = "".join(f'<span class="chip mono" style="font-size:11px">{_e(e)}</span>' for e in imp.removed[:6])
+                impacts += (f'<div style="padding:10px 0;border-bottom:1px dashed #edf0f4"><div style="display:flex;'
+                            f'align-items:center;gap:8px;margin-bottom:6px"><b>{_e(label)}</b><span class="chip ok">'
+                            f'뺄 수 있음</span><span class="muted" style="margin-left:auto;font-size:12px">'
+                            f'{len(imp.removed)}개 항목이 빠집니다</span></div><div style="display:flex;gap:5px;'
+                            f'flex-wrap:wrap">{items}</div></div>')
+            else:
+                deps = ", ".join(imp.dependents)
+                impacts += (f'<div style="padding:10px 0"><div style="display:flex;align-items:center;gap:8px;'
+                            f'margin-bottom:6px"><b>{_e(label)}</b><span class="chip warn">함께 빼야 함</span></div>'
+                            f'<div class="muted" style="font-size:12.5px">기대고 있는 모듈 {len(imp.dependents)}개: '
+                            f'{_e(deps)}</div></div>')
+    body = f"""
+<div class="head"><div><h1>온톨로지 라이브러리</h1><div class="sub">도메인 온톨로지를 따로 만들고 판본을 관리하며, 스튜디오에 꽂고 뺍니다</div></div>
+  <div class="right"><span class="btn ghost">OWL 가져오기</span><span class="btn ghost">판본 비교</span><span class="btn primary">새 온톨로지</span></div></div>
+<div class="tabs">{"".join(tabs)}</div>
+<div class="grid" style="grid-template-columns:1.62fr 1fr">
+  <div class="card"><div class="ch">모듈<div class="right muted" style="font-weight:600;font-size:12px">스튜디오에 꽂힌 것 {len(active)}개</div></div>
+    <div class="cb" style="padding:0"><table><tr><th>온톨로지</th><th>종류</th><th>판본</th><th>요구</th><th>구성</th><th style="text-align:center">스튜디오</th></tr>
+    {"".join(body_rows)}</table></div></div>
+  <div style="display:flex;flex-direction:column;gap:16px;min-height:0">
+    <div class="card"><div class="ch">지금 꽂힌 구성<div class="right muted" style="font-weight:600;font-size:12px">아래 층이 위 층에 기댑니다</div></div>
+      <div class="cb">{layers}</div></div>
+    <div class="card" style="flex:1"><div class="ch">빼기 전 영향</div><div class="cb">{impacts}</div></div></div>
+</div>"""
+    return _frame("library", "library", studio, body, counts)
 
 
 def _highlight(code: str, language: str) -> str:
@@ -389,13 +538,18 @@ def _screen_decision(studio: Studio, name: str, key: str, counts) -> str:
     ok = bool(outs.get(next(iter(table.outputs), ""), False))
     reason = next((v for k, v in outs.items() if isinstance(v, str)), "")
     inputs = list(table.inputs)
-    head = "<th>규칙</th>" + "".join(f"<th>{_e(i)}</th>" for i in inputs) + "".join(f"<th>{_e(o)}</th>"
-                                                                                for o in table.outputs)
+    def th(name: str) -> str:
+        return f"<th>{_e(name).replace('_', '_<wbr>')}</th>"
+
+    head = "<th>규칙</th>" + "".join(th(i) for i in inputs) + "".join(th(o) for o in table.outputs)
     rows = ""
+    clip = "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:190px"
     for r in table.rules:
-        cells = "".join(f'<td class="mono">{_e(r.when.get(i, "-"))}</td>' for i in inputs)
-        outc = "".join(f"<td>{_fmt(r.then.get(o))}</td>" for o in table.outputs)
-        rows += f'<tr class="{"hit" if r.id in res.matched else ""}"><td class="mono">{_e(r.id)}</td>{cells}{outc}</tr>'
+        cells = "".join(f'<td class="mono" style="white-space:nowrap">{_e(r.when.get(i, "-"))}</td>' for i in inputs)
+        outc = "".join(f'<td style="{clip}">{_fmt(r.then.get(o))}</td>' for o in table.outputs)
+        cite = f'<div class="muted" style="font-size:10.5px;font-family:inherit">{_e(r.cite)}</div>' if r.cite else ""
+        rows += (f'<tr class="{"hit" if r.id in res.matched else ""}"><td class="mono" style="white-space:nowrap">'
+                 f'{_e(r.id)}{cite}</td>{cells}{outc}</tr>')
     ev = "".join(f'<div class="ev"><div><b>{_e(e.input)}</b><div class="muted mono">{_e(e.object_type)} {_e(e.key)}</div>'
                  f'</div><div><span class="chip b">{_fmt(e.value)}</span></div><div class="src mono muted">← {_e(e.source)}'
                  f'</div></div>' for e in res.evidence)
@@ -440,10 +594,10 @@ def _screen_decision(studio: Studio, name: str, key: str, counts) -> str:
 <div class="banner {banner_cls}"><span class="ic {"y" if ok else "x"}" style="width:30px;height:30px;font-size:16px">{"✓" if ok else "!"}</span>
   <div><div class="big">{_e(table.label)} · {verdict}</div><div class="why">{_e(reason)}</div></div>
   <div style="margin-left:auto"><span class="chip b">규칙 {_e(", ".join(res.matched))}</span></div></div>
-<div class="grid" style="grid-template-columns:1.45fr 1fr">
+<div class="grid" style="grid-template-columns:minmax(0,1.5fr) minmax(420px,1fr)">
   <div style="display:flex;flex-direction:column;gap:16px;min-height:0">
     <div class="card"><div class="ch">결정표<div class="right"><span class="chip">적중 정책 {_e(table.hit_policy)}</span></div></div>
-      <div class="cb" style="padding:0"><table><tr>{head}</tr>{rows}</table></div></div>
+      <div class="cb" style="padding:0"><table class="tight" style="font-size:12.5px"><tr>{head}</tr>{rows}</table></div></div>
     <div class="card"><div class="ch">근거 경로</div><div class="cb">{ev}</div></div></div>
   {action_html}
 </div>"""
@@ -528,15 +682,18 @@ def render(studio: Studio, *, query: str = "", decision: str = "", key: str = ""
     key = key or next((q.key for q in o.questions if q.decision == decision), "")
     selected = selected or (o.decisions[decision].target if decision else next(iter(o.objects)))
     counts = {"onto": len(o.objects), "query": len(o.queries), "decide": len(o.decisions) + len(o.actions),
-              "check": len(o.questions)}
-    screens = [_screen_ontology(studio, selected, counts)]
+              "check": len(o.questions),
+              "library": len(studio.library.names()) if studio.library is not None else
+              (len(studio.composition.modules) if studio.composition else 1)}
+    screens = [_screen_library(studio, counts), _screen_ontology(studio, selected, counts)]
     if query:
         screens.append(_screen_query(studio, query, target, counts))
     if decision and key:
         screens.append(_screen_decision(studio, decision, key, counts))
     screens.append(_screen_map(studio, counts))
-    script = ("<script>const ids=['ontology','query','decision','map'];function show(){const h=location.hash.slice(1);"
-              "const m={onto:'ontology',query:'query',decide:'decision',map:'map'};const id=m[h]||h;"
+    script = ("<script>const ids=['library','ontology','query','decision','map'];function show(){"
+              "const h=location.hash.slice(1);"
+              "const m={onto:'ontology',query:'query',decide:'decision',map:'map',library:'library'};const id=m[h]||h;"
               "if(!document.body.classList.contains('single'))return;document.querySelectorAll('.screen').forEach("
               "s=>s.classList.toggle('on',s.id===(ids.includes(id)?id:'ontology')));}"
               "addEventListener('hashchange',show);show();</script>")

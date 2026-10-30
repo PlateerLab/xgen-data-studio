@@ -1,0 +1,27 @@
+module: acme-overlay
+version: 1.0.0
+kind: customer
+label: 고객사 차이 · ACME
+description: 표준은 두고 이 고객사만 다른 것만 얹습니다. 선물 포장 속성, VIP 반품기간 연장 규칙, 쓰지 않는 찜 질의 제거.
+requires: [commerce, commerce-bindings]
+
+extend:
+  objects:
+    OrderItem:
+      properties:
+        gift_wrap: {type: boolean, label: 선물 포장}
+  decisions:
+    returnEligibility:
+      inputs:
+        customer_grade: {type: string, path: [itemOf, placedBy], property: grade}
+      rules_prepend:
+        - id: vip-window
+          when: {customer_grade: '"VIP"', days_since_delivery: "<= 14", item_status: '"NORMAL"', category_returnable: "true"}
+          then: {eligible: true, reason: VIP 고객은 배송 완료 후 14일까지 반품할 수 있습니다}
+          cite: ACME 운영 정책 4.1
+
+remove:
+  queries: [wishlistCount]
+
+questions:
+  - {id: A1, text: "VIP 고객의 I1001 은 어떤 규칙으로 반품되나요?", decision: returnEligibility, key: I1001, expect: {eligible: true, reason: VIP 고객은 배송 완료 후 14일까지 반품할 수 있습니다}}

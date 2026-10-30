@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from xgen_data_studio.check import all_props, find_prop
 from xgen_data_studio.ir import Column, Edge, Query, Ref
 from xgen_data_studio.model import Ontology
 from xgen_data_studio.rdf import RDF_TYPE, Iris, iri, literal
@@ -32,12 +33,11 @@ class Projection:
             s = iri(ir.node(t, k))
             for a in self.ancestors(onto, t):
                 out.append((s, iri(RDF_TYPE), iri(ir.cls(a))))
-            obj = onto.objects[t]
             for p, v in sorted(props.items()):
                 if v is None:
                     continue
-                prop = obj.properties.get(p)
-                out.append((s, iri(ir.prop(p)), literal(v, prop.type if prop else "string")))
+                ptype = onto.property_type(p) or "string"
+                out.append((s, iri(ir.prop(p)), literal(v, ptype)))
         for link, st, sk, tt, tk in sorted(self.edges):
             out.append((iri(ir.node(st, sk)), iri(ir.link(link)), iri(ir.node(tt, tk))))
         return out
@@ -143,13 +143,16 @@ def project(onto: Ontology, source) -> Projection:
     for t in onto.objects.values():
         if not t.table:
             continue
-        names = list(t.properties)
+        names = all_props(onto, t.name)
+        types = {p: find_prop(onto, t.name, p).type for p in names}
         q = Query(nodes={"x": t.name}, columns=[Column(Ref("x", p), p) for p in names])
         for row in _read_rows(onto, source, q):
-            props = {p: from_source(v, t.properties[p].type) for p, v in zip(names, row)}
+            props = {p: from_source(v, types[p]) for p, v in zip(names, row)}
             key = props.get(t.key)
             if key is None:
                 continue
+            for a in proj.ancestors(onto, t.name)[1:]:
+                props.setdefault(onto.objects[a].key, key)
             proj.nodes[(t.name, str(key))] = props
     for lk in onto.links.values():
         src, dst = onto.objects[lk.source], onto.objects[lk.target]

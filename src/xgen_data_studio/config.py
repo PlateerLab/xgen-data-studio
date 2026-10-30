@@ -30,8 +30,9 @@ def open_backend(spec: dict, base: Path):
 
         path = spec.get("path", ":memory:")
         b = SqliteBackend(path if path == ":memory:" else str(base / path))
-        if spec.get("seed"):
-            b.script((base / spec["seed"]).read_text(encoding="utf-8"))
+        seeds = spec.get("seed") or []
+        for s in [seeds] if isinstance(seeds, str) else seeds:
+            b.script((base / s).read_text(encoding="utf-8"))
         return b
     if kind == "postgres":
         import psycopg
@@ -73,12 +74,19 @@ def load_studio(path: str | Path) -> Studio:
     p = Path(path)
     spec = _env(yaml.safe_load(p.read_text(encoding="utf-8")))
     base = p.parent
-    onto = Ontology.load(base / spec["ontology"]).check()
     now = None
     if spec.get("now"):
         fixed = datetime.fromisoformat(str(spec["now"]))
         now = lambda: fixed  # noqa: E731
-    studio = Studio(onto, now=now, use_zen=bool(spec.get("zen", False)))
+    kw = {"now": now, "use_zen": bool(spec.get("zen", False))}
+    if spec.get("modules"):
+        from xgen_data_studio.library import Library
+
+        lib = Library(base / spec.get("library", "."))
+        studio = Studio.from_library(lib, list(spec["modules"]), namespace=spec.get("namespace", ""),
+                                     name=spec.get("name", ""), **kw)
+    else:
+        studio = Studio(Ontology.load(base / spec["ontology"]).check(), **kw)
     for name, b in (spec.get("backends") or {}).items():
         studio.add_backend(name, open_backend(b, base), source=bool(b.get("source", False)))
     if spec.get("project"):

@@ -1,0 +1,86 @@
+module: finance
+version: 1.0.0
+kind: domain
+label: 금융 온톨로지 (여신 예시)
+description: 차주 · 계좌 · 대출과 연체 심사 판정. 클래스는 FIBO 개념에 정렬해 두었고, 원천 바인딩은 따로 둡니다.
+requires: [core]
+
+objects:
+  Borrower:
+    label: 차주
+    parent: Party
+    key: borrower_id
+    aligned: [https://spec.edmcouncil.org/fibo/ontology/FBC/DebtAndEquities/Debt/Borrower]
+    properties:
+      borrower_id: {type: string, label: 차주 번호, required: true}
+      credit_grade: {type: enum, values: [A, B, C, D], label: 신용 등급}
+
+  Account:
+    label: 계좌
+    key: account_id
+    aligned: [https://spec.edmcouncil.org/fibo/ontology/FBC/ProductsAndServices/ClientsAndAccounts/Account]
+    properties:
+      account_id: {type: string, label: 계좌 번호, required: true}
+      borrower_id: {type: string, label: 차주 번호}
+      balance: {type: decimal, unit: KRW, label: 잔액}
+      opened_at: {type: datetime, label: 개설 일시}
+
+  Loan:
+    label: 대출
+    parent: Agreement
+    key: loan_id
+    aligned: [https://spec.edmcouncil.org/fibo/ontology/LOAN/LoansGeneral/Loans/Loan]
+    properties:
+      loan_id: {type: string, label: 대출 번호, required: true}
+      borrower_id: {type: string, label: 차주 번호}
+      account_id: {type: string, label: 상환 계좌}
+      principal: {type: decimal, unit: KRW, label: 대출 원금}
+      rate: {type: decimal, unit: "%", label: 금리}
+      loan_status: {type: enum, values: [ACTIVE, OVERDUE, CLOSED], label: 대출 상태}
+
+links:
+  holds: {from: Borrower, to: Account, cardinality: one_to_many, inverse: heldBy, label: 보유 계좌}
+  borrows: {from: Borrower, to: Loan, cardinality: one_to_many, inverse: borrowedBy, label: 대출}
+  repaysFrom: {from: Loan, to: Account, cardinality: many_to_one, label: 상환 계좌}
+
+decisions:
+  overdueReview:
+    label: 연체 심사 필요 여부
+    target: Loan
+    cite: 여신 사후관리 지침 2조
+    inputs:
+      status: {type: string, property: loan_status}
+      grade: {type: string, path: [borrowedBy], property: credit_grade}
+    outputs: {review: boolean, reason: string}
+    rules:
+      - {id: overdue-low-grade, when: {status: '"OVERDUE"', grade: 'in ["C", "D"]'}, then: {review: true, reason: 연체 중인 C · D 등급 차주는 심사가 필요합니다}}
+      - {id: overdue, when: {status: '"OVERDUE"'}, then: {review: true, reason: 연체 중입니다}}
+      - {id: normal, when: {}, then: {review: false, reason: 심사가 필요하지 않습니다}}
+
+roles:
+  loan_officer:
+    label: 여신 담당자
+    read: [Borrower, Account, Loan]
+    run: ["*"]
+
+queries:
+  overdueLoans:
+    label: 연체 대출
+    query:
+      match: {b: Borrower, l: Loan}
+      edges: [[b, borrows, l]]
+      where: {eq: [l.loan_status, OVERDUE]}
+      return: [b.name, l.loan_id, l.principal]
+      order: [loan_id]
+  principalByGrade:
+    label: 신용 등급별 대출 원금
+    query:
+      match: {b: Borrower, l: Loan}
+      edges: [[b, borrows, l]]
+      where: {ne: [l.loan_status, CLOSED]}
+      return: [b.credit_grade, {sum: l.principal, as: principal}, {count: l, as: loans}]
+      order: [credit_grade]
+
+questions:
+  - {id: L1, text: "연체 중인 대출은 몇 건인가요?", query: overdueLoans, expect: {rows: 1}}
+  - {id: L2, text: "대출 L2 는 심사가 필요한가요?", decision: overdueReview, key: L2, expect: {review: true, reason: 연체 중인 C · D 등급 차주는 심사가 필요합니다}}

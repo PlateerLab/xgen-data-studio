@@ -7,13 +7,14 @@ from typing import Any, Callable
 
 from xgen_data_studio.actions import ActionService, SqlWriteback
 from xgen_data_studio.backends.base import Backend, Result
-from xgen_data_studio.check import check, find_prop
+from xgen_data_studio.check import all_props, check, column_of, find_prop
 from xgen_data_studio.compile.base import Compiled, CompileError, compiler_for
 from xgen_data_studio.conformance import ConformanceReport
 from xgen_data_studio.conformance import run as run_conformance
 from xgen_data_studio.decide.table import DecisionError, DecisionResult, Evidence, evaluate_table
 from xgen_data_studio.ir import Cmp, Column, Edge, Query, Ref
 from xgen_data_studio.model import Ontology
+from xgen_data_studio.modules import Composition, Impact, Module, ModuleError, compose, removal_impact
 from xgen_data_studio.projection import ChangeSet, Projection, apply_changes, load, project
 from xgen_data_studio.roles import AccessDenied, apply_role
 from xgen_data_studio.values import from_source, normalize, parse_datetime
@@ -51,6 +52,73 @@ class Studio:
         self.actions = ActionService(self)
         self.projection: Projection | None = None
         self._loaded: dict[str, Projection] = {}
+        self.composition: Composition | None = None
+        self.library = None
+        self._compose_kw: dict[str, str] = {}
+
+    @classmethod
+    def from_modules(cls, modules: list[Module], *, library=None, namespace: str = "", name: str = "",
+                     **kw) -> Studio:
+        """A studio over a composition of modules, which can then be attached and detached at run time."""
+        comp = compose(modules, namespace=namespace, name=name)
+        if comp.issues:
+            raise ModuleError("; ".join(comp.issues))
+        st = cls(comp.ontology, **kw)
+        st.composition, st.library = comp, library
+        st._compose_kw = {"namespace": comp.ontology.namespace, "name": name}
+        return st
+
+    @classmethod
+    def from_library(cls, library, wanted: list[str], **kw) -> Studio:
+        return cls.from_modules(library.resolve(wanted), library=library, **kw)
+
+    def _modules(self) -> list[Module]:
+        if self.composition is None:
+            raise ModuleError("this studio was built from one ontology file, not from modules")
+        return list(self.composition.modules)
+
+    def _use(self, comp: Composition) -> Composition:
+        if comp.issues:
+            raise ModuleError("; ".join(comp.issues))
+        self.composition, self.onto = comp, comp.ontology
+        self.projection, self._loaded = None, {}
+        return comp
+
+    def attach(self, module: Module | str, version: str = "") -> Composition:
+        """Plug a module in (with what it requires from the library); refused if the result does not hold."""
+        current = self._modules()
+        names = {m.name for m in current}
+        if isinstance(module, str):
+            if self.library is None:
+                raise ModuleError("attach by name needs a library")
+            wanted = [m.name for m in current]
+            picked = self.library.resolve(wanted + [f"{module}@{version}" if version else module])
+            extra = [m for m in picked if m.name not in names]
+        else:
+            extra = [module]
+        if not extra:
+            raise ModuleError(f"{module} is already attached")
+        return self._use(compose(current + extra, **self._compose_kw))
+
+    def detach(self, name: str, *, cascade: bool = False) -> Impact:
+        """Unplug a module; refused, with the impact, when something left would point at what it took away."""
+        current = self._modules()
+        impact = removal_impact(current, name, cascade=cascade, **self._compose_kw)
+        if not impact.ok:
+            err = ModuleError("; ".join(impact.broken))
+            err.impact = impact
+            raise err
+        gone = {name, *impact.dependents} if cascade else {name}
+        self._use(compose([m for m in current if m.name not in gone], **self._compose_kw))
+        return impact
+
+    def detach_impact(self, name: str, *, cascade: bool = False) -> Impact:
+        return removal_impact(self._modules(), name, cascade=cascade, **self._compose_kw)
+
+    def check_bindings(self, *, backend: str | None = None, data: bool = True):
+        from xgen_data_studio.bindings import check_bindings
+
+        return check_bindings(self.onto, self.backend(backend), data=data)
 
     def add_backend(self, name: str, backend: Backend, *, source: bool = False) -> Backend:
         backend.name = name
@@ -108,13 +176,13 @@ class Studio:
 
     def fetch(self, type_name: str, key: Any, *, backend: str | None = None) -> dict[str, Any] | None:
         obj = self.onto.obj(type_name)
-        names = list(obj.properties)
+        names = all_props(self.onto, type_name)
         q = Query(nodes={"x": type_name}, where=Cmp(Ref("x", obj.key), "eq", str(key)),
                   columns=[Column(Ref("x", p), p) for p in names])
         rows = self.run(q, backend=backend).rows
         if not rows:
             return None
-        return {p: from_source(v, obj.properties[p].type) for p, v in zip(names, rows[0])}
+        return {p: from_source(v, find_prop(self.onto, type_name, p).type) for p, v in zip(names, rows[0])}
 
     def _follow(self, type_name: str, key: Any, path: list[str]) -> tuple[str, list[str]]:
         nodes, edges, here = {"x0": type_name}, [], type_name
@@ -172,7 +240,8 @@ class Studio:
                 value = raw
             values[inp.name] = value
             obj = self.onto.obj(here)
-            evidence.append(Evidence(inp.name, value, here, obj_key, prop, f"{obj.table}.{obj.prop(prop).col}"))
+            evidence.append(Evidence(inp.name, value, here, obj_key, prop,
+                                     f"{obj.table}.{column_of(self.onto, here, prop)}" if obj.table else ""))
         if self.use_zen:
             from xgen_data_studio.decide.zen import evaluate_zen
 

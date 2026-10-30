@@ -73,6 +73,11 @@ class StudioTools:
     def list_proposals(self) -> list[dict]:
         return [p.to_dict() for p in self.studio.actions.proposals.values()]
 
+    def list_modules(self) -> list[dict]:
+        comp = self.studio.composition
+        return comp.summary() if comp else [{"module": self.studio.onto.name, "version": self.studio.onto.version,
+                                             "kind": "domain", "label": self.studio.onto.label}]
+
     def list_backends(self) -> dict:
         return {n: b.capabilities.to_dict() for n, b in self.studio.backends.items()}
 

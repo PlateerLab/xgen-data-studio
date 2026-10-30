@@ -1,0 +1,200 @@
+module: commerce
+version: 1.0.0
+kind: domain
+label: 이커머스 표준 온톨로지
+description: 고객 · 주문 · 주문상품 · 단품 · 상품 · 카테고리 · 클레임과 반품 판정. 원천 테이블 바인딩은 따로 둡니다.
+requires: [core]
+
+objects:
+  Customer:
+    label: 고객
+    parent: Party
+    key: customer_id
+    aligned: [https://schema.org/Person]
+    properties:
+      customer_id: {type: string, label: 고객 번호, required: true}
+      grade: {type: enum, values: [BASIC, SILVER, VIP], label: 등급}
+
+  Category:
+    label: 카테고리
+    key: category_id
+    title: name
+    implements: [Named]
+    properties:
+      category_id: {type: string, label: 카테고리 번호, required: true}
+      name: {type: string, label: 이름}
+      parent_id: {type: string, label: 상위 카테고리 번호}
+      returnable: {type: boolean, label: 반품 가능 카테고리, cite: 반품 정책서 v1.2 2.1조}
+
+  Product:
+    label: 상품
+    key: product_id
+    title: name
+    implements: [Named]
+    aligned: [https://schema.org/Product, https://gs1.org/voc/Product]
+    properties:
+      product_id: {type: string, label: 상품 번호, required: true}
+      name: {type: string, label: 상품명}
+      category_id: {type: string, label: 카테고리 번호}
+      brand: {type: string, label: 브랜드}
+
+  Sku:
+    label: 단품
+    key: sku_id
+    properties:
+      sku_id: {type: string, label: 단품 번호, required: true}
+      product_id: {type: string, label: 상품 번호}
+      size: {type: string, label: 사이즈}
+      color: {type: string, label: 색상}
+      price: {type: decimal, unit: KRW, label: 판매가}
+      stock: {type: integer, label: 재고}
+
+  Order:
+    label: 주문
+    parent: Agreement
+    key: order_id
+    aligned: [https://schema.org/Order]
+    properties:
+      order_id: {type: string, label: 주문 번호, required: true}
+      customer_id: {type: string, label: 고객 번호}
+      ordered_at: {type: datetime, label: 주문 일시}
+      status: {type: enum, values: [ORDERED, PAID, SHIPPED, DELIVERED, CANCELLED], label: 주문 상태}
+    states:
+      property: status
+      initial: ORDERED
+      states: [ORDERED, PAID, SHIPPED, DELIVERED, CANCELLED]
+      transitions:
+        - {from: ORDERED, to: PAID, action: pay}
+        - {from: PAID, to: SHIPPED, action: ship}
+        - {from: SHIPPED, to: DELIVERED, action: deliver}
+        - {from: ORDERED, to: CANCELLED, action: cancel}
+        - {from: PAID, to: CANCELLED, action: cancel}
+
+  OrderItem:
+    label: 주문상품
+    key: item_id
+    aligned: [https://schema.org/OrderItem]
+    properties:
+      item_id: {type: string, label: 주문상품 번호, required: true}
+      order_id: {type: string, label: 주문 번호}
+      sku_id: {type: string, label: 단품 번호}
+      quantity: {type: integer, label: 수량}
+      unit_price: {type: decimal, unit: KRW, label: 결제 단가}
+      delivered_at: {type: datetime, label: 배송 완료 일시}
+      item_status: {type: enum, values: [NORMAL, RETURN_REQUESTED, RETURNED], label: 주문상품 상태}
+    states:
+      property: item_status
+      initial: NORMAL
+      states: [NORMAL, RETURN_REQUESTED, RETURNED]
+      transitions:
+        - {from: NORMAL, to: RETURN_REQUESTED, action: requestReturn}
+        - {from: RETURN_REQUESTED, to: RETURNED, action: completeReturn}
+        - {from: RETURN_REQUESTED, to: NORMAL, action: rejectReturn}
+
+  Claim:
+    label: 클레임
+    key: claim_id
+    properties:
+      claim_id: {type: string, label: 클레임 번호, required: true}
+      item_id: {type: string, label: 주문상품 번호}
+      kind: {type: enum, values: [RETURN, EXCHANGE, CANCEL], label: 클레임 유형}
+      reason: {type: string, label: 사유}
+      claimed_at: {type: datetime, label: 접수 일시}
+      claim_status: {type: enum, values: [OPEN, CLOSED], label: 클레임 상태}
+
+links:
+  placed: {from: Customer, to: Order, cardinality: one_to_many, inverse: placedBy, label: 주문함}
+  hasItem: {from: Order, to: OrderItem, cardinality: one_to_many, inverse: itemOf, label: 주문상품, required: true}
+  ofSku: {from: OrderItem, to: Sku, cardinality: many_to_one, label: 단품}
+  skuOf: {from: Sku, to: Product, cardinality: many_to_one, label: 상품}
+  inCategory: {from: Product, to: Category, cardinality: many_to_one, label: 카테고리}
+  broader: {from: Category, to: Category, cardinality: many_to_one, transitive: true, inverse: narrower, label: 상위 카테고리}
+  hasClaim: {from: OrderItem, to: Claim, cardinality: one_to_many, inverse: claimOf, label: 클레임}
+  wishes: {from: Customer, to: Product, label: 찜}
+
+decisions:
+  returnEligibility:
+    label: 반품 가능 여부
+    target: OrderItem
+    cite: 반품 정책서 v1.2 3조
+    hit_policy: first
+    inputs:
+      days_since_delivery: {type: integer, days_since: delivered_at}
+      item_status: {type: string, property: item_status}
+      category_returnable: {type: boolean, path: [ofSku, skuOf, inCategory], property: returnable}
+    outputs: {eligible: boolean, reason: string}
+    rules:
+      - {id: not-delivered, when: {days_since_delivery: "null"}, then: {eligible: false, reason: 배송 완료 전입니다}}
+      - {id: in-progress, when: {item_status: '!= "NORMAL"'}, then: {eligible: false, reason: 이미 반품이 진행 중입니다}}
+      - {id: category, when: {category_returnable: "false"}, then: {eligible: false, reason: 반품할 수 없는 카테고리입니다}, cite: 반품 정책서 v1.2 2.1조}
+      - {id: in-window, when: {days_since_delivery: "<= 7"}, then: {eligible: true, reason: 배송 완료 후 반품기간 7일 이내입니다}, cite: 반품 정책서 v1.2 3.2조}
+      - {id: expired, when: {}, then: {eligible: false, reason: 반품기간 7일이 지났습니다}}
+
+actions:
+  requestReturn:
+    label: 반품 신청
+    target: OrderItem
+    parameters: {reason: string}
+    criteria:
+      - {decision: returnEligibility, expect: {eligible: true}}
+    transition_to: RETURN_REQUESTED
+    approval: true
+
+roles:
+  customer_agent:
+    label: 고객 응대 에이전트
+    read: [Order, OrderItem, Sku, Product, Category, Claim]
+    row_filters:
+      Order: {eq: [$self.customer_id, {principal: customer_id}]}
+      OrderItem:
+        exists:
+          match: {own: Order}
+          edges: [[$self, itemOf, own]]
+          where: {eq: [own.customer_id, {principal: customer_id}]}
+    run: [myOrders, returnEligibility]
+    request: [requestReturn]
+  operator:
+    label: 운영자
+    read: ["*"]
+    run: ["*"]
+    request: ["*"]
+    execute: ["*"]
+
+queries:
+  ordersOfCustomer:
+    label: 고객의 주문 목록
+    params: {customer: string}
+    query:
+      match: {c: Customer, o: Order}
+      edges: [[c, placed, o]]
+      where: {eq: [c.customer_id, {param: customer}]}
+      return: [o.order_id, o.status, o.ordered_at]
+      order: [ordered_at]
+  myOrders:
+    label: 내 주문 상품
+    query:
+      match: {o: Order, i: OrderItem}
+      edges: [[o, hasItem, i]]
+      return: [o.order_id, i.item_id, i.item_status]
+      order: [item_id]
+  revenueByCategory:
+    label: 카테고리별 매출
+    query:
+      match: {o: Order, i: OrderItem, s: Sku, p: Product, k: Category}
+      edges: [[o, hasItem, i], [i, ofSku, s], [s, skuOf, p], [p, inCategory, k]]
+      where: {ne: [o.status, CANCELLED]}
+      return: [{col: k.name, as: category}, {sum: i.unit_price, as: revenue}, {count: i, as: items}]
+      order: [-revenue]
+  wishlistCount:
+    label: 고객별 찜 수
+    query:
+      match: {c: Customer, p: Product}
+      edges: [[c, wishes, p]]
+      return: [c.name, {count: p, as: wished}]
+      order: [name]
+
+questions:
+  - {id: Q1, text: "C001 고객의 주문은 몇 건인가요?", query: ordersOfCustomer, params: {customer: C001}, expect: {rows: 2}}
+  - {id: Q2, text: "배송 완료 4일 된 주문상품 I1001 반품 되나요?", decision: returnEligibility, key: I1001, expect: {eligible: true}}
+  - {id: Q3, text: "배송 완료 12일 지난 주문상품 I1003 반품 되나요?", decision: returnEligibility, key: I1003, expect: {eligible: false}}
+  - {id: Q4, text: "속옷 주문상품 I1004 반품 되나요?", decision: returnEligibility, key: I1004, expect: {eligible: false, reason: 반품할 수 없는 카테고리입니다}}

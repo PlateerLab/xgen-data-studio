@@ -1,0 +1,25 @@
+module: commerce-bindings
+version: 1.0.0
+kind: binding
+label: 이커머스 원천 바인딩
+description: 이커머스 표준 온톨로지를 예시 커머스 DB 의 테이블과 컬럼에 연결합니다. 고객사가 바뀌면 이 모듈만 바꿉니다.
+requires: [commerce]
+
+extend:
+  objects:
+    Customer: {table: customers}
+    Category: {table: categories}
+    Product: {table: products}
+    Sku: {table: skus}
+    Order: {table: orders, columns: {agreed_at: ordered_at}}
+    OrderItem: {table: order_items}
+    Claim: {table: claims}
+  links:
+    placed: {"on": {customer_id: customer_id}}
+    hasItem: {"on": {order_id: order_id}}
+    ofSku: {"on": {sku_id: sku_id}}
+    skuOf: {"on": {product_id: product_id}}
+    inCategory: {"on": {category_id: category_id}}
+    broader: {"on": {parent_id: category_id}}
+    hasClaim: {"on": {item_id: item_id}}
+    wishes: {via: {table: wishlists, source: customer_id, target: product_id}}

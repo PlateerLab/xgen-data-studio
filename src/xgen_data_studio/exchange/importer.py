@@ -8,7 +8,9 @@ from xgen_data_studio.exchange.owl import ExchangeReport
 from xgen_data_studio.model import Interface, LinkType, ObjectType, Ontology, Property
 from xgen_data_studio.rdf import OWL, RDFS, TYPE_OF_XSD, XSD
 
-_CONSUMED = {RDFS + "label", RDFS + "comment", RDFS + "subClassOf", RDFS + "domain", RDFS + "range",
+SKOS_MATCH = "http://www.w3.org/2004/02/skos/core#exactMatch"
+DCT_SOURCE = "http://purl.org/dc/terms/source"
+_CONSUMED = {SKOS_MATCH, DCT_SOURCE, RDFS + "isDefinedBy", RDFS + "label", RDFS + "comment", RDFS + "subClassOf", RDFS + "domain", RDFS + "range",
              OWL + "inverseOf", OWL + "versionInfo", OWL + "hasKey", OWL + "unionOf", OWL + "oneOf",
              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type", "http://www.w3.org/1999/02/22-rdf-syntax-ns#first",
              "http://www.w3.org/1999/02/22-rdf-syntax-ns#rest"}
@@ -56,6 +58,15 @@ def from_owl(text: str, *, namespace: str = "", fmt: str = "turtle", name: str =
     for c in sorted(classes, key=str):
         names[c] = _ident(_split(str(c))[1])
 
+    def aligned(node, local: str) -> list[str]:
+        out = [str(x) for x in g.objects(node, R.URIRef(SKOS_MATCH))]
+        if str(node) != namespace + local:
+            out.insert(0, str(node))
+        return list(dict.fromkeys(out))
+
+    def cite(node) -> str:
+        return str(g.value(node, R.URIRef(DCT_SOURCE)) or "")
+
     def members(node) -> list:
         u = g.value(node, OWL_N.unionOf)
         return list(Collection(g, u)) if u is not None else []
@@ -68,7 +79,7 @@ def from_owl(text: str, *, namespace: str = "", fmt: str = "turtle", name: str =
             rep.unsupported.append(f"class {n}: anonymous superclass (restriction or expression)")
         objects[n] = ObjectType(name=n, key="", properties={}, label=label(c),
                                 description=str(g.value(c, RDFS_N.comment) or ""),
-                                parent=names[parents[0]] if parents else "")
+                                parent=names[parents[0]] if parents else "", cite=cite(c), aligned=aligned(c, n))
         if len(parents) > 1:
             rep.adjusted.append(f"class {n}: {len(parents)} superclasses -> kept {names[parents[0]]}")
         rep.preserved.append(f"class {n}")
@@ -99,7 +110,8 @@ def from_owl(text: str, *, namespace: str = "", fmt: str = "turtle", name: str =
             rep.unsupported.append(f"property {n}: no class domain, not attached")
             continue
         for d in ds:
-            objects[d].properties[n] = Property(n, type_, label=label(p), values=values)
+            objects[d].properties[n] = Property(n, type_, label=label(p), values=values, cite=cite(p),
+                                                aligned=aligned(p, n))
         rep.preserved.append(f"property {n}")
 
     links: dict[str, LinkType] = {}
@@ -119,7 +131,7 @@ def from_owl(text: str, *, namespace: str = "", fmt: str = "turtle", name: str =
         card = {(True, True): "one_to_one", (True, False): "many_to_one", (False, True): "one_to_many"}.get(
             (fun, ifun), "many_to_many")
         links[n] = LinkType(n, ds[0], rs[0], card, label=label(p), transitive=OWL_N.TransitiveProperty in types,
-                            symmetric=OWL_N.SymmetricProperty in types)
+                            symmetric=OWL_N.SymmetricProperty in types, cite=cite(p), aligned=aligned(p, n))
         if inv is not None:
             inverses.setdefault(n, _ident(_split(str(inv))[1]))
         rep.preserved.append(f"link {n}")

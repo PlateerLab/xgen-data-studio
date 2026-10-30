@@ -1,0 +1,16 @@
+module: finance-bindings
+version: 1.0.0
+kind: binding
+label: 금융 원천 바인딩
+description: 금융 온톨로지를 예시 여신 DB 의 테이블과 컬럼에 연결합니다.
+requires: [finance]
+
+extend:
+  objects:
+    Borrower: {table: borrowers}
+    Account: {table: accounts}
+    Loan: {table: loans, columns: {agreed_at: opened_at}}
+  links:
+    holds: {"on": {borrower_id: borrower_id}}
+    borrows: {"on": {borrower_id: borrower_id}}
+    repaysFrom: {"on": {account_id: account_id}}

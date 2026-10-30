@@ -270,6 +270,29 @@ def _all_props(onto: Ontology, type_name: str) -> set[str]:
     return out
 
 
+def column_of(onto: Ontology, type_name: str, name: str) -> str:
+    """The source column a bound type reads for a property; an ancestor's key is the type's own key."""
+    obj = onto.objects[type_name]
+    if name in obj.properties:
+        return obj.properties[name].col
+    t, seen = obj.parent, {type_name}
+    while t and t in onto.objects and t not in seen:
+        seen.add(t)
+        anc = onto.objects[t]
+        if name in anc.properties:
+            return obj.key_prop.col if name == anc.key else anc.properties[name].col
+        t = anc.parent
+    raise CheckError([f"{type_name} has no property '{name}'"])
+
+
+def concrete_subtypes(onto: Ontology, type_name: str) -> list[str]:
+    return [o.name for o in onto.objects.values() if o.table and o.name != type_name and is_a(onto, o.name, type_name)]
+
+
+def all_props(onto: Ontology, type_name: str) -> list[str]:
+    return sorted(_all_props(onto, type_name))
+
+
 def find_prop(onto: Ontology, type_name: str, name: str):
     p = _find_prop(onto, type_name, name)
     if p is None:

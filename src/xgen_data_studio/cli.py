@@ -99,6 +99,54 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--agent", action="append", default=[], help="name=role1,role2")
     s.add_argument("--sees")
 
+    s = sub.add_parser("library", help="the ontology library: list, show, create, import, diff, delete")
+    lib = s.add_subparsers(dest="lib_cmd", required=True)
+    x = lib.add_parser("list")
+    x.add_argument("root")
+    x = lib.add_parser("show")
+    x.add_argument("root")
+    x.add_argument("name")
+    x.add_argument("--version", default="")
+    x = lib.add_parser("create")
+    x.add_argument("root")
+    x.add_argument("name")
+    x.add_argument("--kind", default="domain")
+    x.add_argument("--label", default="")
+    x.add_argument("--description", default="")
+    x.add_argument("--namespace", default="")
+    x.add_argument("--requires", action="append", default=[])
+    x = lib.add_parser("import-owl")
+    x.add_argument("root")
+    x.add_argument("file")
+    x.add_argument("name")
+    x.add_argument("--kind", default="domain")
+    x.add_argument("--label", default="")
+    x.add_argument("--requires", action="append", default=[])
+    x = lib.add_parser("diff")
+    x.add_argument("root")
+    x.add_argument("name")
+    x.add_argument("a")
+    x.add_argument("b")
+    x = lib.add_parser("delete")
+    x.add_argument("root")
+    x.add_argument("name")
+    x.add_argument("--version", default="")
+    x = lib.add_parser("compose")
+    x.add_argument("root")
+    x.add_argument("modules", nargs="+")
+    x.add_argument("--namespace", default="")
+    x.add_argument("-o", "--output")
+
+    s = sub.add_parser("modules", help="the modules plugged into a studio, and what unplugging one would do")
+    s.add_argument("config")
+    s.add_argument("--impact", help="module to check before detaching")
+    s.add_argument("--cascade", action="store_true")
+
+    s = sub.add_parser("bindings", help="check the definition against the actual database")
+    s.add_argument("config")
+    s.add_argument("--backend")
+    s.add_argument("--no-data", action="store_true")
+
     s = sub.add_parser("preview", help="write a studio page built from live results")
     s.add_argument("config")
     s.add_argument("-o", "--output", default="studio.html")
@@ -189,6 +237,38 @@ def main(argv: list[str] | None = None) -> int:
         _out({"written": a.output, "report": rep.to_dict(), **({} if a.output else {"ontology": onto.to_dict()})})
         return 0
 
+    if a.cmd == "library":
+        from xgen_data_studio.library import Library
+
+        lib = Library(a.root)
+        if a.lib_cmd == "list":
+            _out(lib.list())
+        elif a.lib_cmd == "show":
+            m = lib.get(a.name, a.version)
+            _out({"module": m.to_dict(), "versions": lib.versions(a.name), "elements": m.elements()})
+        elif a.lib_cmd == "create":
+            m = lib.create(a.name, kind=a.kind, label=a.label, description=a.description, namespace=a.namespace,
+                           requires=a.requires)
+            _out({"created": m.key, "path": str(lib.root / m.name)})
+        elif a.lib_cmd == "import-owl":
+            m, rep = lib.import_owl(Path(a.file).read_text(encoding="utf-8"), a.name, kind=a.kind, label=a.label,
+                                    requires=a.requires)
+            _out({"created": m.key, "report": rep.to_dict()})
+        elif a.lib_cmd == "diff":
+            _out(lib.diff(a.name, a.a, a.b))
+        elif a.lib_cmd == "delete":
+            lib.delete(a.name, a.version)
+            _out({"deleted": f"{a.name}{'@' + a.version if a.version else ''}"})
+        else:
+            from xgen_data_studio.modules import compose
+
+            comp = compose(lib.resolve(a.modules), namespace=a.namespace)
+            if a.output:
+                comp.ontology.dump(a.output)
+            _out({"modules": comp.summary(), "issues": comp.issues, "written": a.output})
+            return 0 if not comp.issues else 1
+        return 0
+
     if a.cmd == "mcp":
         from xgen_data_studio.mcp_server import main as mcp_main
 
@@ -234,6 +314,16 @@ def main(argv: list[str] | None = None) -> int:
         rep = validate(studio.onto, studio.projection or project(studio.onto, studio.backend()))
         _out(rep.to_dict())
         return 0 if rep.conforms else 1
+    elif a.cmd == "modules":
+        if a.impact:
+            imp = studio.detach_impact(a.impact, cascade=a.cascade)
+            _out(imp.to_dict())
+            return 0 if imp.ok else 1
+        _out(studio.composition.summary() if studio.composition else [])
+    elif a.cmd == "bindings":
+        rep = studio.check_bindings(backend=a.backend, data=not a.no_data)
+        _out(rep.to_dict())
+        return 0 if rep.ok else 1
     elif a.cmd == "preview":
         from xgen_data_studio.preview import render
 

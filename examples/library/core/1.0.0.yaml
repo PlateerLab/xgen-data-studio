@@ -1,0 +1,48 @@
+module: core
+version: 1.0.0
+kind: core
+label: 공통 개념
+description: 모든 도메인이 기대는 상위 개념입니다. 도메인의 객체는 이 개념의 하위 유형으로 붙어, 도메인이 달라도 같은 개념으로 함께 조회됩니다.
+namespace: https://example.org/studio#
+
+interfaces:
+  Named:
+    label: 이름 있는 것
+    properties: [name]
+
+objects:
+  Party:
+    label: 당사자
+    description: 거래나 계약에 참여하는 사람 또는 조직
+    key: party_id
+    title: name
+    implements: [Named]
+    properties:
+      party_id: {type: string, label: 당사자 번호}
+      name: {type: string, label: 이름}
+
+  Agreement:
+    label: 약정
+    description: 당사자 사이에 맺어진 주문 · 계약 · 대출 같은 약정
+    key: agreement_id
+    properties:
+      agreement_id: {type: string, label: 약정 번호}
+      agreed_at: {type: datetime, label: 약정 일시}
+
+queries:
+  allParties:
+    label: 모든 당사자
+    query:
+      match: {p: Party}
+      return: [p.party_id, p.name]
+      order: [party_id]
+
+  agreementsSince:
+    label: 기간 이후의 모든 약정
+    params: {since: datetime}
+    example: {since: "2026-10-01T00:00:00"}
+    query:
+      match: {a: Agreement}
+      where: {gte: [a.agreed_at, {param: since}]}
+      return: [a.agreement_id, a.agreed_at]
+      order: [agreement_id]

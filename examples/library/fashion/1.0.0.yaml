@@ -1,0 +1,28 @@
+module: fashion
+version: 1.0.0
+kind: industry
+label: 패션 업종 확장
+description: 이커머스 표준은 그대로 두고 패션 업종에 필요한 소재 · 시즌과 질의를 얹습니다.
+requires: [commerce]
+
+extend:
+  objects:
+    Sku:
+      properties:
+        material: {type: string, label: 소재}
+        season: {type: enum, values: [SS, FW, ALL], label: 시즌}
+
+queries:
+  skusByMaterial:
+    label: 소재별 단품
+    params: {material: string}
+    example: {material: 울}
+    query:
+      match: {s: Sku, p: Product}
+      edges: [[s, skuOf, p]]
+      where: {eq: [s.material, {param: material}]}
+      return: [s.sku_id, p.name, s.season]
+      order: [sku_id]
+
+questions:
+  - {id: F1, text: "울 소재 단품은 몇 개인가요?", query: skusByMaterial, params: {material: 울}, expect: {rows: 2}}
